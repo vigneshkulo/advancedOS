@@ -23,15 +23,15 @@
 
 int usrPID;
 int procID;
-int portN;
 int numMcMsg;
 int numMcMemb[MAX_MULTICAST_MSGS];
 int mcMemb[MAX_MULTICAST_MSGS][50];
 char msgData[MAX_MULTICAST_MSGS][50];
-char ipAddr[MAX_MULTICAST_MEMBERS][50];
 
 int m_send(int msgNum)
 {
+	int portN;
+	char ipAddr[50];
 	int chkID;
 	char* cPtr;
 	int i;
@@ -58,9 +58,10 @@ int m_send(int msgNum)
 				break;
 			}
 		}
-	}
-	#if 0
-        int connSock, ret, in, i, flags;
+//	}
+
+	#if 1
+        int connSock, ret, in, flags;
         time_t currentTime;
         struct sockaddr_in servaddr;
         struct sctp_sndrcvinfo sndrcvinfo;
@@ -68,19 +69,15 @@ int m_send(int msgNum)
         char buffer[MAX_BUFFER+1];
 
 
-        for(i = 0; i < 2; i++)
-        {
+//	{
                 /* Create an SCTP TCP-Style Socket */
                 connSock = socket( AF_INET, SOCK_STREAM, IPPROTO_SCTP );
 
                 /* Specify the peer endpoint to which we'll connect */
                 bzero( (void *)&servaddr, sizeof(servaddr) );
                 servaddr.sin_family = AF_INET;
-                if(0 == i) servaddr.sin_port = htons(5000);
-                if(0 == i) servaddr.sin_addr.s_addr = inet_addr( "10.176.67.64" );
-
-                if(1 == i) servaddr.sin_port = htons(6000);
-                if(1 == i) servaddr.sin_addr.s_addr = inet_addr( "10.176.67.66" );
+                servaddr.sin_port = htons(portN);
+                servaddr.sin_addr.s_addr = inet_addr(ipAddr);
 
                 /* Connect to the server */
                 ret = connect( connSock, (struct sockaddr *)&servaddr, sizeof(servaddr) );
@@ -94,39 +91,27 @@ int m_send(int msgNum)
                 events.sctp_data_io_event = 1;
                 setsockopt( connSock, SOL_SCTP, SCTP_EVENTS, (const void *)&events, sizeof(events) );
 
-                #if 1
                 /* New client socket has connected */
 
                 /* Grab the current time */
                 currentTime = time(NULL);
 
-                if(0 == i)
+                if(0 == i%2)
                 {
                         /* Send local time on stream 0 (local time stream) */
                         snprintf( buffer, MAX_BUFFER, "%s\n", ctime(&currentTime) );
                         printf("* Client: Buffer: %s\n", buffer);
 
                         ret = sctp_sendmsg( connSock, (void *)buffer, (size_t)strlen(buffer), NULL, 0, 0, 0, LOCALTIME_STREAM, 0, 0 );
-
-                        /* Expect reply message from the peer */
-                        memset( (void *)buffer, 0, sizeof(buffer) );
-                        in = sctp_recvmsg( connSock, (void *)buffer, sizeof(buffer), (struct sockaddr *)NULL, 0, &sndrcvinfo, &flags );
-                        printf("* Client: Bytes: %d, Buffer: %s\n", in, buffer);
                 }
-                else if(1 == i)
+                else 
                 {
                         /* Send GMT on stream 1 (GMT stream) */
                         snprintf( buffer, MAX_BUFFER, "%s\n", asctime( gmtime( &currentTime ) ) );
                         printf("* Client: Buffer: %s\n", buffer);
 
                         ret = sctp_sendmsg( connSock, (void *)buffer, (size_t)strlen(buffer), NULL, 0, 0, 0, GMT_STREAM, 0, 0 );
-
-                        /* Expect reply message from the peer */
-                        memset( (void *)buffer, 0, sizeof(buffer) );
-                        in = sctp_recvmsg( connSock, (void *)buffer, sizeof(buffer), (struct sockaddr *)NULL, 0, &sndrcvinfo, &flags );
-                        printf("* Client: Bytes: %d, Buffer: %s\n", in, buffer);
                 }
-                #endif
 
                 /* Close our socket and exit */
                 close(connSock);
@@ -134,6 +119,98 @@ int m_send(int msgNum)
 	#endif
 }
 
+int m_receive()
+{
+	time_t currentTime;
+	char buffer[MAX_BUFFER+1];
+	struct sockaddr_in servaddr;
+	int listenSock, connSock, ret;
+
+        int in, i, flags;
+        struct sctp_sndrcvinfo sndrcvinfo;
+        struct sctp_event_subscribe events;
+
+        int portN;
+        int chkID;
+        char* cPtr;
+        char line[50];
+        FILE *fp = NULL;
+
+        fp = fopen("ipconfig.dat", "r");
+        if(NULL == fp)  exit(-1);
+
+        while(NULL != fgets(line, 50, fp))
+        {
+                sscanf(line, "%d", &chkID);
+                if(chkID == usrPID)
+                {
+                        cPtr = line;
+                        sscanf(cPtr, "%*d %d", &portN);
+                        printf("* My Port Number: %d\n", portN);
+                        break;
+                }
+        }
+	fclose(fp);
+
+	/* Create SCTP TCP-Style Socket */
+	listenSock = socket( AF_INET, SOCK_STREAM, IPPROTO_SCTP );
+	printf("* Server: Socket FD: %d\n", listenSock);
+
+	/* Accept connections from any interface */
+	bzero( (void *)&servaddr, sizeof(servaddr) );
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_addr.s_addr = htonl( INADDR_ANY );
+	servaddr.sin_port = htons(portN);
+
+	/* Bind to the wildcard address (all) and MY_PORT_NUM */
+	ret = bind( listenSock, (struct sockaddr *)&servaddr, sizeof(servaddr) );
+	if(-1 == ret)
+	{
+		perror("* Error Binding Socket: ");
+	}
+	printf("* Server: Bind Return: %d\n", ret);
+
+	/* Place the server socket into the listening state */
+	listen( listenSock, 5 );
+
+	/* Server loop... */
+	while( 1 ) 
+	{
+
+		/* Await a new client connection */
+		connSock = accept( listenSock, (struct sockaddr *)NULL, (int *)NULL );
+		printf("* Server: Connection Accepted: %d\n", connSock);
+
+		/* Enable receipt of SCTP Snd/Rcv Data via sctp_recvmsg */
+		memset( (void *)&events, 0, sizeof(events) );
+		events.sctp_data_io_event = 1;
+		setsockopt( connSock, SOL_SCTP, SCTP_EVENTS, (const void *)&events, sizeof(events) );
+
+		in = sctp_recvmsg( connSock, (void *)buffer, sizeof(buffer), (struct sockaddr *)NULL, 0, &sndrcvinfo, &flags );
+
+		/* Null terminate the incoming string */
+		buffer[in] = 0;
+
+		if        (sndrcvinfo.sinfo_stream == LOCALTIME_STREAM) {
+		printf("(Local) %s\n", buffer);
+		} else if (sndrcvinfo.sinfo_stream == GMT_STREAM) {
+		printf("(GMT  ) %s\n", buffer);
+		}
+
+	}
+	
+	#if 0
+        snprintf( buffer, MAX_BUFFER, "%s\n", "Received");
+        ret = sctp_sendmsg( connSock, (void *)buffer, (size_t)strlen(buffer), NULL, 0, 0, 0, LOCALTIME_STREAM, 0, 0 );
+        printf("* Send Status: %d\n", ret);
+        sleep(1);
+	#endif
+
+	/* Close the client connection */
+	close( connSock );
+
+	return 0;
+}
 int main()
 {
         int i, j;
@@ -160,7 +237,7 @@ int main()
 	}
         printf("* Process Id: %d\n", usrPID);
 
-        fp = fopen("msgconfig.dat", "r+");
+        fp = fopen("msgconfig.dat", "r");
         if(NULL == fp)  exit(-1);
 
         i = 0;
@@ -219,7 +296,11 @@ int main()
 	fclose(fp); 
 	fp = NULL;
 
+	pthread_t receiveThread;
+	pthread_create(&receiveThread, NULL, m_receive, NULL);
+
+	printf("* Press Enter to Send\n");
+	scanf("%d", &i);
 	m_send(0);
-	m_send(1);
 	return 0;
 }
