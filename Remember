@@ -1,0 +1,10 @@
+To do ssh without password prompt
+
+/* Generates Key */
+1. ssh-keygen -t rsa
+
+/* Copies id_rsa.pub to authorized_keys */
+2. ssh-add
+
+/* Copies authorized_keys to remote-host */
+3. scp ~/.ssh/id_rsa.pub vxk111430@net01.utdallas.edu:~/.ssh/authorized_keys

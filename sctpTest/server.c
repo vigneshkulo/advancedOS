@@ -16,10 +16,10 @@
 
 int main()
 {
-	int listenSock, connSock, ret;
-	struct sockaddr_in servaddr;
-	char buffer[MAX_BUFFER+1];
 	time_t currentTime;
+	char buffer[MAX_BUFFER+1];
+	struct sockaddr_in servaddr;
+	int listenSock, connSock, ret;
 
         int in, i, flags;
         struct sctp_sndrcvinfo sndrcvinfo;
