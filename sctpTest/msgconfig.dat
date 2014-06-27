@@ -1,5 +1,5 @@
 01 001 <002:003:004> <Short Msg>
-02 002 <001> <This is a Very Very long Message>
+02 002 <001:003> <This is a Very Very long Message>
 03 001 <002:003:004> <Hello>
 04 001 <004> <Bye>
 05 003 <001:002:004> <This is a Very Very long Message>
