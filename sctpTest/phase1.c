@@ -103,34 +103,14 @@ int m_send(int msgNum)
 
                 /* New client socket has connected */
 
-                /* Grab the current time */
-                currentTime = time(NULL);
+		msgBuf.sendId = usrPID;
+		msgBuf.rcvId = mcMemb[msgNum][i];
 
-	//	if(0 == i%2)
-		if(1)
-                {
-                        /* Send local time on stream 0 (local time stream) */
-                        snprintf( buffer, MAX_BUFFER, "%s\n", ctime(&currentTime) );
-                        printf("* Client: Buffer: %s\n", buffer);
+		sem_wait(&semTimeStamp);
+		msgBuf.timeStamp = gTimeStamp;
+		sem_post(&semTimeStamp);
 
-			msgBuf.sendId = usrPID;
-			msgBuf.rcvId = mcMemb[msgNum][i];
-
-			sem_wait(&semTimeStamp);
-			msgBuf.timeStamp = gTimeStamp;
-			sem_post(&semTimeStamp);
-
-		//	ret = sctp_sendmsg( connSock, (void *)buffer, (size_t)strlen(buffer), NULL, 0, 0, 0, LOCALTIME_STREAM, 0, 0 );
-			ret = sctp_sendmsg( connSock, (void *)&msgBuf, (size_t)sizeof(strMsg), NULL, 0, 0, 0, LOCALTIME_STREAM, 0, 0 );
-                }
-                else 
-                {
-                        /* Send GMT on stream 1 (GMT stream) */
-                        snprintf( buffer, MAX_BUFFER, "%s\n", asctime( gmtime( &currentTime ) ) );
-                        printf("* Client: Buffer: %s\n", buffer);
-
-                        ret = sctp_sendmsg( connSock, (void *)buffer, (size_t)strlen(buffer), NULL, 0, 0, 0, GMT_STREAM, 0, 0 );
-                }
+		ret = sctp_sendmsg( connSock, (void *)&msgBuf, (size_t)sizeof(strMsg), NULL, 0, 0, 0, LOCALTIME_STREAM, 0, 0 );
 
                 /* Close our socket and exit */
                 close(connSock);
@@ -195,7 +175,6 @@ int m_receive()
 	/* Server loop... */
 	while( 1 ) 
 	{
-
 		/* Await a new client connection */
 		connSock = accept( listenSock, (struct sockaddr *)NULL, (int *)NULL );
 		printf("* Server: Connection Accepted: %d\n", connSock);
@@ -205,7 +184,6 @@ int m_receive()
 		events.sctp_data_io_event = 1;
 		setsockopt( connSock, SOL_SCTP, SCTP_EVENTS, (const void *)&events, sizeof(events) );
 
-	//	in = sctp_recvmsg( connSock, (void *)buffer, sizeof(buffer), (struct sockaddr *)NULL, 0, &sndrcvinfo, &flags );
 		in = sctp_recvmsg( connSock, (void *)&msgBuf, sizeof(strMsg), (struct sockaddr *)NULL, 0, &sndrcvinfo, &flags );
 	
 		sem_wait(&semTimeStamp);
@@ -214,27 +192,8 @@ int m_receive()
 		printf("* <%d> Sender: %d, Rcv: %d, TimeStamp: %d\n", gTimeStamp, msgBuf.sendId, msgBuf.rcvId, msgBuf.timeStamp);
 		printf("* ----------------------------------------------------------------- \n");
 		sem_post(&semTimeStamp);
-
-		#if 0
-		/* Null terminate the incoming string */
-		buffer[in] = 0;
-
-		if        (sndrcvinfo.sinfo_stream == LOCALTIME_STREAM) {
-		printf("(Local) %s\n", buffer);
-		} else if (sndrcvinfo.sinfo_stream == GMT_STREAM) {
-		printf("(GMT  ) %s\n", buffer);
-		}
-		#endif
-
 	}
 	
-	#if 0
-        snprintf( buffer, MAX_BUFFER, "%s\n", "Received");
-        ret = sctp_sendmsg( connSock, (void *)buffer, (size_t)strlen(buffer), NULL, 0, 0, 0, LOCALTIME_STREAM, 0, 0 );
-        printf("* Send Status: %d\n", ret);
-        sleep(1);
-	#endif
-
 	/* Close the client connection */
 	close( connSock );
 
@@ -330,8 +289,13 @@ int main()
 	pthread_t receiveThread;
 	pthread_create(&receiveThread, NULL, m_receive, NULL);
 
-	printf("* Press Enter to Send\n");
-	scanf("%d", &i);
-	m_send(0);
+	j = 0;
+	while(1)
+	{
+		printf("* Press Enter to Send\n");
+		scanf("%d", &i);
+		m_send(j);
+		j++;
+	}
 	return 0;
 }
