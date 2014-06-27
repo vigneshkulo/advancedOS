@@ -63,6 +63,8 @@ int m_send(int msgNum)
 	{
 		sendMsg(INITIAL, mcMemb[msgNum][i], -1, timeStamp);
 	}
+	printf("* -------------------------------------------------------------------\n");
+
 	for(i = 0; i < numMcMemb[msgNum]; i++)
 	{
 		sem_wait(&semSharedMem);
@@ -81,18 +83,20 @@ int m_send(int msgNum)
                         propTS[i+1] = swap;
                 }
         }
-	printf("* msg_send: Max Time Stamp: %d\n", propTS[numMcMemb[msgNum]-1]);
+	printf("* msg_send: Proposed time stamps: ");
+	for(i = 0; i < numMcMemb[msgNum]; i++)
+		printf("%d ", propTS[i]);
+
+	printf("\n* msg_send: Max Time Stamp: %d\n", propTS[numMcMemb[msgNum]-1]);
 	
-	#if 0
 	sem_wait(&semTimeStamp);
-	++gTimeStamp;
-	timeStamp = gTimeStamp;
+	timeStamp = ++gTimeStamp;
 	sem_post(&semTimeStamp);
+
 	for(i = 0; i < numMcMemb[msgNum]; i++)
 	{
-		sendMsg(FINAL, mcMemb[msgNum][i], -1, timeStamp);
+		sendMsg(FINAL, mcMemb[msgNum][i], propTS[numMcMemb[msgNum]-1], timeStamp);
 	}
-	#endif
 
 	return 0;
 }
@@ -117,7 +121,7 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 		{
 			cPtr = line;
 			sscanf(cPtr, "%*d %d %s", &portN, ipAddr);
-			printf("* sendMsg: Process ID : %d, PortN: %d, IP Address: %s\n", rcvId, portN, ipAddr);
+			printf("* <%d> sendMsg: Sending Msg to %d [%d, %s]\n", timeStamp, rcvId, portN, ipAddr);
 			break;
 		}
 	}
@@ -143,7 +147,7 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 	ret = connect( connSock, (struct sockaddr *)&servaddr, sizeof(servaddr) );
 	if(-1 == ret)
 	{
-		perror("* Client: Connection to Server Failed: ");
+		perror("* sendMsg: Connection to Server Failed: ");
 	}
 
 	/* Enable receipt of SCTP Snd/Rcv Data via sctp_recvmsg */
@@ -182,6 +186,7 @@ int m_receive()
         char* cPtr;
         char line[50];
         FILE *fp = NULL;
+	int propTimeStamp;
 
         fp = fopen("ipconfig.dat", "r");
         if(NULL == fp)  exit(-1);
@@ -214,7 +219,7 @@ int m_receive()
 	ret = bind( listenSock, (struct sockaddr *)&servaddr, sizeof(servaddr) );
 	if(-1 == ret)
 	{
-		perror("* Error Binding Socket: ");
+		perror("* m_receive: Error Binding Socket: ");
 	}
 	printf("* m_receive: Bind Return: %d\n", ret);
 
@@ -226,7 +231,11 @@ int m_receive()
 	{
 		/* Await a new client connection */
 		connSock = accept( listenSock, (struct sockaddr *)NULL, (int *)NULL );
-		printf("* m_receive: Connection Accepted: %d\n", connSock);
+		if(-1 == connSock)
+		{
+			perror("* m_receive: Accepting Connection Failed: ");
+		}
+	//	printf("* m_receive: Connection Accepted: %d\n", connSock);
 
 		/* Enable receipt of SCTP Snd/Rcv Data via sctp_recvmsg */
 		memset( (void *)&events, 0, sizeof(events) );
@@ -237,22 +246,27 @@ int m_receive()
 	
 		sem_wait(&semTimeStamp);
 		gTimeStamp = MAX(gTimeStamp, msgBuf.timeStamp) + 1;
-		printf("* ----------------------------------------------------------------- \n");
-		printf("* <%d> m_receive: %d, Rcv: %d, TimeStamp: %d\n", gTimeStamp, msgBuf.sendId, msgBuf.rcvId, msgBuf.timeStamp);
-		printf("* ----------------------------------------------------------------- \n");
+		printf("* <%d> m_receive: Receiving from %d\n", gTimeStamp, msgBuf.sendId);
 		sem_post(&semTimeStamp);
 
 		if(INITIAL == msgBuf.type)
 		{
-			printf("* m_send: Proposing Time Stamp: %d\n", gTimeStamp);	
-			sendMsg(PROPOSED, msgBuf.sendId, gTimeStamp, ++gTimeStamp);
+			propTimeStamp = gTimeStamp;
+			++gTimeStamp;
+			printf("* <%d> m_reply : Proposing Time Stamp: %d\n", gTimeStamp, propTimeStamp);	
+			sendMsg(PROPOSED, msgBuf.sendId, propTimeStamp, gTimeStamp);
 		}
 		else if(PROPOSED == msgBuf.type)
 		{
-			printf("* m_receive: Recevied Proposed Time Stamp: %d\n", msgBuf.propTimeStamp);	
+			printf("* <%d> m_receive: Recevied Proposed Time Stamp: %d\n", gTimeStamp, msgBuf.propTimeStamp);	
 			gMsgShare.propTimeStamp = msgBuf.propTimeStamp;
 			sem_post(&semSharedMem);
 		}
+		else if(FINAL == msgBuf.type)
+		{
+			printf("* <%d> m_receive: Recevied Final with TS: %d\n", gTimeStamp, msgBuf.propTimeStamp);	
+		}
+		printf("* -------------------------------------------------------------------\n");
 	}
 	
 	/* Close the client connection */
