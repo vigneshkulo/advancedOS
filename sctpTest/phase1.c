@@ -21,12 +21,24 @@
 #define MAX_BUFFER      	1024
 #define MY_PORT_NUM     	6000
 
+#define MAX(a,b) (((a)>(b))?(a):(b))
+
+sem_t semTimeStamp;
+
 int usrPID;
 int procID;
 int numMcMsg;
+int gTimeStamp = 0;
 int numMcMemb[MAX_MULTICAST_MSGS];
 int mcMemb[MAX_MULTICAST_MSGS][50];
 char msgData[MAX_MULTICAST_MSGS][50];
+
+typedef struct
+{
+	int rcvId;
+	int sendId;
+	int timeStamp;
+}strMsg;
 
 int m_send(int msgNum)
 {
@@ -40,6 +52,7 @@ int m_send(int msgNum)
 
 	if(msgNum > numMcMsg-1) return 0;
 
+	++gTimeStamp;
 	printf("* Number of Multicast Members: %d\n", numMcMemb[msgNum]);
 	for(i = 0; i < numMcMemb[msgNum]; i++)
 	{
@@ -58,18 +71,15 @@ int m_send(int msgNum)
 				break;
 			}
 		}
-//	}
 
-	#if 1
-        int connSock, ret, in, flags;
-        time_t currentTime;
-        struct sockaddr_in servaddr;
-        struct sctp_sndrcvinfo sndrcvinfo;
-        struct sctp_event_subscribe events;
-        char buffer[MAX_BUFFER+1];
+		strMsg msgBuf;
+		int connSock, ret, in, flags;
+		time_t currentTime;
+		struct sockaddr_in servaddr;
+		struct sctp_sndrcvinfo sndrcvinfo;
+		struct sctp_event_subscribe events;
+		char buffer[MAX_BUFFER+1];
 
-
-//	{
                 /* Create an SCTP TCP-Style Socket */
                 connSock = socket( AF_INET, SOCK_STREAM, IPPROTO_SCTP );
 
@@ -96,13 +106,22 @@ int m_send(int msgNum)
                 /* Grab the current time */
                 currentTime = time(NULL);
 
-                if(0 == i%2)
+	//	if(0 == i%2)
+		if(1)
                 {
                         /* Send local time on stream 0 (local time stream) */
                         snprintf( buffer, MAX_BUFFER, "%s\n", ctime(&currentTime) );
                         printf("* Client: Buffer: %s\n", buffer);
 
-                        ret = sctp_sendmsg( connSock, (void *)buffer, (size_t)strlen(buffer), NULL, 0, 0, 0, LOCALTIME_STREAM, 0, 0 );
+			msgBuf.sendId = usrPID;
+			msgBuf.rcvId = mcMemb[msgNum][i];
+
+			sem_wait(&semTimeStamp);
+			msgBuf.timeStamp = gTimeStamp;
+			sem_post(&semTimeStamp);
+
+		//	ret = sctp_sendmsg( connSock, (void *)buffer, (size_t)strlen(buffer), NULL, 0, 0, 0, LOCALTIME_STREAM, 0, 0 );
+			ret = sctp_sendmsg( connSock, (void *)&msgBuf, (size_t)sizeof(strMsg), NULL, 0, 0, 0, LOCALTIME_STREAM, 0, 0 );
                 }
                 else 
                 {
@@ -116,11 +135,11 @@ int m_send(int msgNum)
                 /* Close our socket and exit */
                 close(connSock);
         }
-	#endif
 }
 
 int m_receive()
 {
+	strMsg msgBuf;
 	time_t currentTime;
 	char buffer[MAX_BUFFER+1];
 	struct sockaddr_in servaddr;
@@ -186,8 +205,17 @@ int m_receive()
 		events.sctp_data_io_event = 1;
 		setsockopt( connSock, SOL_SCTP, SCTP_EVENTS, (const void *)&events, sizeof(events) );
 
-		in = sctp_recvmsg( connSock, (void *)buffer, sizeof(buffer), (struct sockaddr *)NULL, 0, &sndrcvinfo, &flags );
+	//	in = sctp_recvmsg( connSock, (void *)buffer, sizeof(buffer), (struct sockaddr *)NULL, 0, &sndrcvinfo, &flags );
+		in = sctp_recvmsg( connSock, (void *)&msgBuf, sizeof(strMsg), (struct sockaddr *)NULL, 0, &sndrcvinfo, &flags );
+	
+		sem_wait(&semTimeStamp);
+		gTimeStamp = MAX(gTimeStamp, msgBuf.timeStamp) + 1;
+		printf("* ----------------------------------------------------------------- \n");
+		printf("* <%d> Sender: %d, Rcv: %d, TimeStamp: %d\n", gTimeStamp, msgBuf.sendId, msgBuf.rcvId, msgBuf.timeStamp);
+		printf("* ----------------------------------------------------------------- \n");
+		sem_post(&semTimeStamp);
 
+		#if 0
 		/* Null terminate the incoming string */
 		buffer[in] = 0;
 
@@ -196,6 +224,7 @@ int m_receive()
 		} else if (sndrcvinfo.sinfo_stream == GMT_STREAM) {
 		printf("(GMT  ) %s\n", buffer);
 		}
+		#endif
 
 	}
 	
@@ -222,6 +251,8 @@ int main()
         char line[100];
 	FILE *fp = NULL;
         char hostName[30];
+
+        sem_init(&semTimeStamp, 0, 1);
 
         if(-1 == gethostname(hostName, sizeof(hostName)))
         {
