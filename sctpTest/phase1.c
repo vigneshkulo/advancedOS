@@ -27,6 +27,7 @@ sem_t semSharedMem;
 int usrPID;
 int procID;
 int numMcMsg;
+int msgCount = 0;
 int gTimeStamp = 0;
 int numMcMemb[MAX_MULTICAST_MSGS];
 int mcMemb[MAX_MULTICAST_MSGS][50];
@@ -35,11 +36,23 @@ char msgData[MAX_MULTICAST_MSGS][50];
 typedef struct
 {
 	int type;
+	int msgId;
 	int rcvId;
 	int sendId;
 	int timeStamp;
 	int propTimeStamp;
 }strMsg;
+
+typedef struct strMsgQ
+{
+	int type;
+	int msgId;
+	int rcvId;
+	int sendId;
+	int timeStamp;
+	int propTimeStamp;
+	struct strMsgQ* next;
+}strMsgQ;
 
 strMsg gMsgShare;
 
@@ -58,6 +71,8 @@ int m_send(int msgNum)
 	++gTimeStamp;
 	timeStamp = gTimeStamp;
 	sem_post(&semTimeStamp);
+	
+	msgCount++;
 
 	for(i = 0; i < numMcMemb[msgNum]; i++)
 	{
@@ -158,6 +173,7 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 	/* New client socket has connected */
 
 	msgBuf.type = type;
+	msgBuf.msgId = (msgCount << 6) | usrPID;
 	msgBuf.sendId = usrPID;
 	msgBuf.rcvId = rcvId;
 	msgBuf.propTimeStamp = propTimeStamp;
@@ -167,6 +183,131 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 
 	/* Close our socket and exit */
 	close(connSock);
+}
+
+strMsgQ* head = NULL;
+int insert(strMsg argMsg)
+{
+        strMsgQ* curPtr = NULL;
+        strMsgQ* prevPtr = NULL;
+        strMsgQ* local = (strMsgQ*) malloc (sizeof(strMsgQ));
+
+	local->type = argMsg.type;
+	local->msgId = argMsg.msgId;
+	local->rcvId = argMsg.rcvId;
+	local->sendId = argMsg.sendId;
+        local->timeStamp = argMsg.timeStamp;
+	local->propTimeStamp = argMsg.propTimeStamp;
+
+        if(NULL == head)
+        {
+                head = local;
+                head->next = NULL;
+		printf("* Inserted Head: %d\n", local->propTimeStamp);
+        }
+        else
+        {
+                if(local->propTimeStamp < head->propTimeStamp)
+                {
+                        local->next = head;
+                        head = local;
+                        return 0;
+                }
+
+                curPtr = head;
+                while(NULL != curPtr->next)
+                {
+                        prevPtr = curPtr;
+                        curPtr = curPtr->next;
+                        if(local->propTimeStamp < curPtr->propTimeStamp)
+                        {
+                                        prevPtr->next = local;
+                                        local->next = curPtr;
+                                        return 0;
+                        }
+                }
+                if(NULL == curPtr->next)
+                {
+                        curPtr->next = local;
+                        local->next = NULL;
+                }
+        }
+        return 0;
+}
+int delete(int msgId)
+{
+        strMsgQ* curPtr = NULL;
+        strMsgQ* prevPtr = NULL;
+        curPtr = head;
+        if(msgId == curPtr->msgId)
+        {
+                head = curPtr->next;
+                free(curPtr);
+                return 0;
+        }
+
+        prevPtr = curPtr;
+        curPtr = curPtr->next;
+        while(NULL != curPtr)
+        {
+                if(msgId == curPtr->msgId)
+                {
+                        prevPtr->next = curPtr->next;
+                        free(curPtr);
+                        break;
+                }
+                prevPtr = curPtr;
+                curPtr = curPtr->next;
+        }
+        return 0;
+}
+
+int deleteMin()
+{
+        strMsgQ* curPtr = head;
+        head = head->next;
+        free(curPtr);
+        return 0;
+}
+
+
+void display()
+{
+        strMsgQ* curPtr = NULL;
+        curPtr = head;
+        printf("* The List is : ");
+        while(NULL != curPtr)
+        {
+                printf("[%d %d %s], ", curPtr->msgId, curPtr->propTimeStamp, (curPtr->type == FINAL) ? "FINAL" : "INITIAL");
+                curPtr = curPtr->next;
+        }
+        printf("\n");
+}
+
+int replace(strMsg argMsg)
+{
+        strMsgQ* curPtr = NULL;
+        curPtr = head;
+        while(NULL != curPtr)
+        {
+		if(argMsg.msgId == curPtr->msgId)
+		{
+			if(argMsg.propTimeStamp == curPtr->propTimeStamp)
+			{
+				curPtr->type = argMsg.type;
+				printf("****** No Change ******\n");
+				return 0;
+			}
+			else
+			{
+				delete(argMsg.msgId);
+				insert(argMsg);
+				printf("****** Changed ******\n");
+				return 0;
+			}
+		}
+		curPtr = curPtr->next;
+	}
 }
 
 int m_receive()
@@ -254,6 +395,9 @@ int m_receive()
 			propTimeStamp = gTimeStamp;
 			++gTimeStamp;
 			printf("* <%d> m_reply : Proposing Time Stamp: %d\n", gTimeStamp, propTimeStamp);	
+			msgBuf.propTimeStamp = propTimeStamp;
+		//	insert(msgBuf.type, msgBuf.msgId, msgBuf.rcvId, msgBuf.sendId, msgBuf.timeStamp, msgBuf.propTimeStamp);
+			insert(msgBuf);
 			sendMsg(PROPOSED, msgBuf.sendId, propTimeStamp, gTimeStamp);
 		}
 		else if(PROPOSED == msgBuf.type)
@@ -264,7 +408,10 @@ int m_receive()
 		}
 		else if(FINAL == msgBuf.type)
 		{
-			printf("* <%d> m_receive: Recevied Final with TS: %d\n", gTimeStamp, msgBuf.propTimeStamp);	
+			display();
+			printf("* <%d> m_receive 2: Recevied Final with TS: %d\n", gTimeStamp, msgBuf.propTimeStamp);	
+			replace(msgBuf);
+			display();
 		}
 		printf("* -------------------------------------------------------------------\n");
 	}
@@ -368,7 +515,6 @@ int main()
 	j = 0;
 	while(1)
 	{
-		printf("* Press Enter to Send\n");
 		scanf("%d", &i);
 		m_send(j);
 		j++;
