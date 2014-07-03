@@ -29,6 +29,10 @@ int procID;
 int numMcMsg;
 int msgCount = 0;
 int gTimeStamp = 0;
+char sendFile[20];
+char recvFile[20];
+FILE *fpSend = NULL;
+FILE *fpRecv = NULL;
 int numMcMemb[MAX_MULTICAST_MSGS];
 int mcMemb[MAX_MULTICAST_MSGS][50];
 char msgData[MAX_MULTICAST_MSGS][50];
@@ -59,6 +63,7 @@ strMsg gMsgShare;
 int m_send(int msgNum)
 {
 	int i;
+	char str[10];
 	int timeStamp;
 	int propTS[MAX_MULTICAST_MEMBERS];
 	if(msgNum > numMcMsg-1) return 0;
@@ -73,6 +78,9 @@ int m_send(int msgNum)
 	sem_post(&semTimeStamp);
 	
 	msgCount++;
+
+	sprintf(str, "%d ", (msgCount << 6) | usrPID);
+	fwrite(str , 1 , strlen(str) , fpSend );
 
 	for(i = 0; i < numMcMemb[msgNum]; i++)
 	{
@@ -136,7 +144,7 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 		{
 			cPtr = line;
 			sscanf(cPtr, "%*d %d %s", &portN, ipAddr);
-			printf("* <%d> sendMsg: Sending Msg to %d [%d, %s]\n", timeStamp, rcvId, portN, ipAddr);
+			printf("* sendMsg: Sending Msg to %d [%d, %s]\n", rcvId, portN, ipAddr);
 			break;
 		}
 	}
@@ -262,10 +270,19 @@ int delete(int msgId)
         return 0;
 }
 
-int deleteMin()
+int getMin(strMsg *argMsg)
 {
+	if(NULL == head) return -1;
         strMsgQ* curPtr = head;
         head = head->next;
+
+	argMsg->type = curPtr->type;
+	argMsg->msgId = curPtr->msgId;
+	argMsg->rcvId = curPtr->rcvId;
+	argMsg->sendId = curPtr->sendId;
+        argMsg->timeStamp = curPtr->timeStamp;
+	argMsg->propTimeStamp = curPtr->propTimeStamp;
+
         free(curPtr);
         return 0;
 }
@@ -387,29 +404,28 @@ int m_receive()
 	
 		sem_wait(&semTimeStamp);
 		gTimeStamp = MAX(gTimeStamp, msgBuf.timeStamp) + 1;
-		printf("* <%d> m_receive: Receiving from %d\n", gTimeStamp, msgBuf.sendId);
+		printf("* m_receive: Receiving from %d\n", msgBuf.sendId);
 		sem_post(&semTimeStamp);
 
 		if(INITIAL == msgBuf.type)
 		{
 			propTimeStamp = gTimeStamp;
 			++gTimeStamp;
-			printf("* <%d> m_reply : Proposing Time Stamp: %d\n", gTimeStamp, propTimeStamp);	
+			printf("* m_receive INITIAL: Proposing Time Stamp: %d\n", propTimeStamp);	
 			msgBuf.propTimeStamp = propTimeStamp;
-		//	insert(msgBuf.type, msgBuf.msgId, msgBuf.rcvId, msgBuf.sendId, msgBuf.timeStamp, msgBuf.propTimeStamp);
 			insert(msgBuf);
 			sendMsg(PROPOSED, msgBuf.sendId, propTimeStamp, gTimeStamp);
 		}
 		else if(PROPOSED == msgBuf.type)
 		{
-			printf("* <%d> m_receive: Recevied Proposed Time Stamp: %d\n", gTimeStamp, msgBuf.propTimeStamp);	
+			printf("* m_receive PROPOSED: Recevied Proposed Time Stamp: %d\n", msgBuf.propTimeStamp);	
 			gMsgShare.propTimeStamp = msgBuf.propTimeStamp;
 			sem_post(&semSharedMem);
 		}
 		else if(FINAL == msgBuf.type)
 		{
 			display();
-			printf("* <%d> m_receive 2: Recevied Final with TS: %d\n", gTimeStamp, msgBuf.propTimeStamp);	
+			printf("* m_receive FINAL: Recevied Final Proposed TS: %d\n", msgBuf.propTimeStamp);	
 			replace(msgBuf);
 			display();
 		}
@@ -449,6 +465,23 @@ int main()
 		sscanf(cPtr, "%2d", &usrPID);
 	}
         printf("* Process Id: %d\n", usrPID);
+	
+	sprintf(sendFile, "SendOrder_%d", usrPID);
+	sprintf(recvFile , "RecvOrder_%d", usrPID);
+
+        fpSend = fopen( sendFile, "w+");
+        if(NULL == fpSend)  
+	{
+		perror("* Error opening Send File: ");
+		exit(-1);
+	}
+	
+        fpRecv = fopen( recvFile, "w+");
+        if(NULL == fpRecv)  
+	{
+		perror("* Error opening Recv File: ");
+		exit(-1);
+	}
 
         fp = fopen("msgconfig.dat", "r");
         if(NULL == fp)  exit(-1);
@@ -512,12 +545,33 @@ int main()
 	pthread_t receiveThread;
 	pthread_create(&receiveThread, NULL, m_receive, NULL);
 
-	j = 0;
+	printf("* Enter a number to Start\n");
+	scanf("%d", &i);
+
+	int random_number;
+	srand ( time(NULL) );
+	for(i = 0; i < numMcMsg; i++)
+	{
+		random_number = rand() % 5 + 1;
+		printf(" %d\n", random_number);
+
+		m_send(i);
+
+		sleep(random_number);
+	}
+	
+	printf("* Enter a number to Exit\n");
+	scanf("%d", &i);
+	
+	char str[10];
+	strMsg msgLocal;
+
 	while(1)
 	{
-		scanf("%d", &i);
-		m_send(j);
-		j++;
+		if(-1 == getMin(&msgLocal)) break;
+
+		sprintf(str, "%d ", msgLocal.msgId);
+		fwrite(str , 1 , strlen(str) , fpRecv );
 	}
 	return 0;
 }
