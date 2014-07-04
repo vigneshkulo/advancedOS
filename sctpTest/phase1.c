@@ -79,8 +79,10 @@ int m_send(int msgNum)
 	
 	msgCount++;
 
-	sprintf(str, "%d ", (msgCount << 6) | usrPID);
+	sprintf(str, "%5d ", (msgCount << 6) | usrPID);
 	fwrite(str , 1 , strlen(str) , fpSend );
+
+	if((msgCount % 10) == 0) fwrite("\n" , 1, 1, fpSend );
 
 	for(i = 0; i < numMcMemb[msgNum]; i++)
 	{
@@ -565,13 +567,16 @@ int main()
 	
 	char str[10];
 	strMsg msgLocal;
-
+	i = 0;
 	while(1)
 	{
 		if(-1 == getMin(&msgLocal)) break;
 
-		sprintf(str, "%d ", msgLocal.msgId);
+		sprintf(str, "%05d ", msgLocal.msgId);
 		fwrite(str , 1 , strlen(str) , fpRecv );
+		i++;
+
+		if((i % 10) == 0) fwrite("\n" , 1, 1, fpRecv );
 	}
 	return 0;
 }
