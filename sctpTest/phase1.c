@@ -16,8 +16,8 @@
 #define PROPOSED		1
 #define FINAL			2
 
-#define MAX_MULTICAST_MSGS	20
-#define MAX_MULTICAST_MEMBERS	10
+#define MAX_MULTICAST_MSGS	100
+#define MAX_MULTICAST_MEMBERS	20
 
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
@@ -531,7 +531,7 @@ int main()
 					//      printf("* Bytes: [%x - %x] = %d\n", *ePtr, *sPtr, ePtr-sPtr);
 						memcpy(msgData[i], ++cPtr, ePtr-sPtr);
 						msgData[i][ePtr-sPtr] = '\0';
-						printf("* Message: %s\n", msgData[i]);
+						printf("* %d: Message: %s\n", numMcMsg, msgData[i]);
 					}
 				}
                         }
@@ -539,6 +539,11 @@ int main()
                         i++;
                         j = 0;
                         printf("* --------------------------------------------- \n");
+			if(numMcMsg == MAX_MULTICAST_MSGS)
+			{
+				printf("* Max multicast message limit reached: %d\n", numMcMsg);
+				break;
+			}
                 }
 	}
 	fclose(fp); 
@@ -578,5 +583,7 @@ int main()
 
 		if((i % 10) == 0) fwrite("\n" , 1, 1, fpRecv );
 	}
+	fclose(fpSend);
+	fclose(fpRecv);
 	return 0;
 }
