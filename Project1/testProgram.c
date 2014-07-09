@@ -32,6 +32,14 @@
 
 #define MAX_NODE_NUM	8000
 
+#define MAX_MULTICAST_MSGS	500
+
+int numMcMsg;
+int notFound = 0;
+int numMcMemb[400];
+int lostMsg[MAX_MULTICAST_MSGS];
+int mcMemb[MAX_MULTICAST_MSGS][50];
+
 typedef struct adjLL
 {
 	int msgId;
@@ -148,7 +156,9 @@ int find(int num)
 	{
 		if(num == stack[i])
 		{
+			#ifdef PLOT
 			printf("* %d Found at %d\n", num, i);
+			#endif
 			return 1;
 		}
 	}
@@ -225,6 +235,153 @@ int isCyclicCheck()
 	return 0;
 }
 
+int check(int msgId)
+{
+	int i;
+	FILE* fpRecv = NULL;
+        char recvFile[20];
+        char line[100];
+        char msgIdStr[20];
+	int found = 0;
+	int msgNum = (msgId >> 6) - 1;
+
+	#ifdef DEBUG
+	printf("* %d Found in: ", msgId);	
+	#endif
+
+	sprintf(msgIdStr , "%05d", msgId);
+	for(i = 0; i < numMcMemb[msgNum]; i++)
+	{
+                sprintf(recvFile , "RecvOrder_%d", mcMemb[msgNum][i]);
+                fpRecv = fopen( recvFile, "r");
+                if(NULL == fpRecv)
+                {
+			printf("* Opening File: %s\n", recvFile);
+                        perror("* Error opening Recv File: ");
+                        exit(-1);
+                }
+                while(NULL != fgets(line, 70, fpRecv))
+                {
+			if(strstr(line, msgIdStr) != NULL)
+			{
+				#ifdef DEBUG
+				printf("%d, ", mcMemb[msgNum][i]);
+				#endif
+
+				found = 1;
+				break;
+			}
+		}
+		if(0 == found)
+		{
+			#ifdef DEBUG
+			printf("[%d], ", mcMemb[msgNum][i]);
+			#endif
+			lostMsg[notFound] = msgId;
+			notFound++;
+		}
+		found = 0;
+		fclose(fpRecv);
+	}
+	#ifdef DEBUG
+	printf("\n");
+	#endif
+	return 0;
+}
+int extract(int usrPID)
+{
+        int memSet = 0;
+	char mcGrp[50];
+        int portN;
+        int procID;
+        char* cPtr;
+        char* sPtr;
+        char* ePtr;
+        char pidStr[5];
+        char line[100];
+        int chkID;
+        int i, j;
+        FILE *fp = NULL;
+        char hostName[30];
+        int hostNameLen;
+
+	fp = fopen("msgconfig.dat", "r");
+        if(NULL == fp)  exit(-1);
+
+        i = 0;
+        j = 0;
+        while(NULL != fgets(line, 100, fp))
+        {
+                sscanf(line, "%*d %d", &chkID);
+
+                if(chkID == usrPID)
+                {
+                        cPtr = line;
+                        sscanf(cPtr, "%*d %d %s", &procID, mcGrp);
+                        cPtr = mcGrp;
+                        cPtr++;
+			#ifdef DEBUG
+                        printf("* Multicast Mem: ");
+			#endif
+                        while(1)
+                        {
+                                sscanf(cPtr, "%d", &mcMemb[i][j]);
+                                sscanf(cPtr, "%*d%s", cPtr);
+				#ifdef DEBUG
+                                printf("%d ", mcMemb[i][j]);
+				#endif
+				numMcMemb[i]++;
+                                if(!strncmp(">", cPtr, 1)) break;
+                                cPtr++;
+                                j++;
+                        }
+			#ifdef DEBUG
+                        printf("\n");
+			#endif
+
+                        cPtr = strchr(line, '<');
+                        cPtr++;
+                        cPtr = strchr(cPtr, '<');
+                        if(NULL != strchr(cPtr, '<'))
+                        {
+                                sPtr = strchr(cPtr, '<');
+                                sPtr++;
+                                if(NULL != strchr(cPtr, '>'))
+                                {
+					sPtr = strchr(cPtr, '<');
+					sPtr++;
+					if(NULL != strchr(cPtr, '>'))
+					{
+						ePtr = strchr(cPtr, '>');
+					//	memcpy(msgData[i], ++cPtr, ePtr-sPtr);
+					//	msgData[i][ePtr-sPtr] = '\0';
+						#ifdef DEBUG
+					//	printf("* %d: Message: %s\n", numMcMsg, msgData[i]);
+						#endif
+					}
+				}
+                        }
+			numMcMsg++;
+                        i++;
+                        j = 0;
+			if(numMcMsg == MAX_MULTICAST_MSGS)
+			{
+				#ifdef DEBUG
+				printf("* Max multicast message limit reached: %d\n", numMcMsg);
+				#endif
+				break;
+			}
+                }
+                else
+                {
+                        if(strstr(line, pidStr) != NULL)
+                        {
+                                memSet++;
+                        }
+                }
+	}
+}
+
 int main()
 {
         char str[7];
@@ -249,10 +406,15 @@ int main()
         printf("* Enter number of Receive Files\n");
         scanf("%d", &num);
 
-	#if 0
+	#ifdef DEBUG
 	printf("* Send Order\n");
-        for(i = 1; i <= 1; i++)
+	#endif
+        for(i = 1; i <= num; i++)
 	{
+		#ifdef DEBUG
+		printf("\n* Process %d Send Log\n", i);
+		#endif
+
 		sprintf(sendFile , "SendOrder_%d", i);
 		fpSend = fopen( sendFile, "r");
 		if(NULL == fpSend)
@@ -260,32 +422,46 @@ int main()
 			perror("* Error opening Send File: ");
 			exit(-1);
 		}
+		memset(&numMcMemb, 0, sizeof(numMcMemb));
+		numMcMsg = 0;
+		extract(i);
+
+		#ifdef DEBUG
+		printf("* %d: Messages\n", numMcMsg);
+		#endif
 
                 while(NULL != fgets(line, 70, fpSend))
                 {
                         cPtr = line;
-                        printf("* %d: ", strlen(line));
-                        fflush(stdout);
-
                         for(j = 0; j < strlen(line)/6; j++)
                         {
                                 sendMsgNum++;
                                 sendNodeArr = (int*) realloc (sendNodeArr, sizeof(int) * sendMsgNum);
                                 while(isspace(*cPtr)) cPtr++;
                                 sscanf(cPtr, "%d", &sendNodeArr[sendMsgNum - 1]);
-                                printf("%5d ", sendNodeArr[sendMsgNum - 1]);
-                                fflush(stdout);
+
+				#ifdef DEBUG
+				printf("%5d ", sendNodeArr[sendMsgNum - 1]);
+				fflush(stdout);
+				#endif
+
                                 cPtr = strchr(cPtr, ' ');
+
+				check(sendNodeArr[sendMsgNum - 1]);
                         }
 
                         memset(line, 0, sizeof(line));
-                        printf("\n");
                 }
+
+		#ifdef DEBUG
                 printf("\n");
+		#endif
 	}
+	
+	#ifdef DEBUG
+	printf("* Receive Order");
 	#endif
 
-	printf("* Receive Order");
         for(i = 1; i <= num; i++)
         {
                 sprintf(recvFile , "RecvOrder_%d", i);
@@ -295,26 +471,34 @@ int main()
                         perror("* Error opening Recv File: ");
                         exit(-1);
                 }
+
+		#ifdef DEBUG
 		printf("\n* Process %d Receive Log\n", i);
+		#endif
+
                 while(NULL != fgets(line, 70, fpRecv))
                 {
                         cPtr = line;
-		//	printf("* %d: ", strlen(line));
-		//	fflush(stdout);
-
                         for(j = 0; j < strlen(line)/6; j++)
                         {
                                 recvMsgNum++;
                                 recvNodeArr = (int*) realloc (recvNodeArr, sizeof(int) * recvMsgNum);
                                 while(isspace(*cPtr)) cPtr++;
                                 sscanf(cPtr, "%d", &recvNodeArr[recvMsgNum - 1]);
+
+				#ifdef DEBUG
                                 printf("%5d ", recvNodeArr[recvMsgNum - 1]);
                                 fflush(stdout);
+				#endif
+
                                 cPtr = strchr(cPtr, ' ');
                         }
 
                         memset(line, 0, sizeof(line));
+
+			#ifdef DEBUG
                         printf("\n");
+			#endif
                 }
 
 		/* Add All nodes to the Directed Graph */
@@ -325,10 +509,28 @@ int main()
 		recvMsgNum = 0;
         }
 
+	/* Check for a Integrity in the Log Files */
+	if(0 == notFound)
+	{
+		printf("* ---------------------------------------------------\n");
+		printf("* Integrity Check Complete: All Messages were Found\n");
+		printf("* ---------------------------------------------------\n");
+	}
+	else if (0 < notFound)
+	{
+		printf("* ---------------------------------------------------\n");
+		printf("* Integrity Check Complete: Messages were Lost: ");
+		for(i = 0; i < notFound; i++)
+		{
+			printf("%d ", lostMsg[i]);
+		}
+		printf("\n* ---------------------------------------------------\n");
+	}
+
 	/* Check for a Cycle in the Graph */
 	if(0 == isCyclicCheck())
 	{
-		printf("\n* --------------------\n");
+		printf("* --------------------\n");
 		printf("* No Cycles Found\n");
 		printf("* ----------------------\n");
 	}
