@@ -1,10 +1,20 @@
-/* Header Files */
+/*
+ * Submitted By    : Vignesh Kulothungan
+ * Subject         : Advanced Operating Systems - Project 1
+ * Module          : Total Order Mulicast Module - Skeen 
+ */
+
+/* User Define Header Files */
+#include "include.h"
+
+/* System Header Files */
 #include <time.h>
 #include <math.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <arpa/inet.h>
 #include <semaphore.h>
 #include <sys/types.h>
@@ -13,21 +23,11 @@
 #include <sys/syscall.h>
 #include <netinet/sctp.h>
 
-/* Static Definitions */
-#define SUCCESS         	1
-#define FAILURE         	-1
-#define MAX_SEND        	-2
-#define MAX_RECEIVE     	-3
-
+/* -------- Static Definitions Start -------- */
 #define RECEIVE_RETRY_TIME	5
 
 #define READ_FD         	10
 #define WRITE_FD        	11
-
-#define SEND            	1
-#define RECEIVE         	2
-#define EXIT			3
-
 
 #define INITIAL			0
 #define PROPOSED		1
@@ -38,7 +38,9 @@
 
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
-/* Global Variables */
+/* -------- Static Definitions End -------- */
+
+/* -------- Global Variables Start -------- */
 sem_t semQueue;
 sem_t semTimeStamp;
 sem_t semSharedMem;
@@ -58,16 +60,6 @@ int numMcMemb[MAX_MULTICAST_MSGS];
 int mcMemb[MAX_MULTICAST_MSGS][MAX_MULTICAST_MEMBERS];
 char msgData[MAX_MULTICAST_MSGS][MAX_MULTICAST_MEMBERS];
 
-typedef struct
-{
-	int type;
-	int msgId;
-	int rcvId;
-	int sendId;
-	int timeStamp;
-	int propTimeStamp;
-}strMsg;
-
 typedef struct strMsgQ
 {
 	int type;
@@ -79,16 +71,21 @@ typedef struct strMsgQ
 	struct strMsgQ* next;
 }strMsgQ;
 
-typedef struct
-{
-        int type;
-        int sendMsgNum;
-        strMsg recvMsg;
-} strPipeMsg;
-
 strMsg gMsgShare;
 
-int m_send(int msgNum)
+/* -------- Global Variables End -------- */
+
+
+/* -------- Function Definition Start -------- */
+int msgSend(int);
+int sendMsg(int , int , int , int );
+/* -------- Function Definition End -------- */
+
+/* Called by Send Thread (Main Process) 
+ * Handles the Send part of Skeen Algorithm.
+ * Sends both INITIAL and FINAL messages to the multicast group members 
+ */
+int msgSend(int msgNum)
 {
 	int i;
 	char str[10];
@@ -96,23 +93,28 @@ int m_send(int msgNum)
 	int propTS[MAX_MULTICAST_MEMBERS];
 	if(msgNum > numMcMsg-1) return 0;
 
+	/* Use Semaphore to access the Lamport Logical Clock */
 	sem_wait(&semTimeStamp);
 	++gTimeStamp;
 	timeStamp = gTimeStamp;
 	sem_post(&semTimeStamp);
 	
+	/* Send Message Count */
 	msgCount++;
 
+	/* Write to File the Message Id being Sent */
 	sprintf(str, "%5d ", (msgCount << 6) | usrPID);
 	fwrite(str , 1 , strlen(str) , fpSend );
 
 	if((msgCount % 10) == 0) fwrite("\n" , 1, 1, fpSend );
 
+	/* Sending INITIAL Message */
 	for(i = 0; i < numMcMemb[msgNum]; i++)
 	{
 		sendMsg(INITIAL, mcMemb[msgNum][i], -1, timeStamp);
 	}
 	
+	/* Waiting for PROPOSED TimeStamps */
 	for(i = 0; i < numMcMemb[msgNum]; i++)
 	{
 		sem_wait(&semSharedMem);
@@ -120,8 +122,8 @@ int m_send(int msgNum)
 		sem_post(&semSharedMem1);
 	}
 
-	/* Bubble Sort */
-        int j, swap = 0;
+	/* Bubble Sort to get MAX of Proposed TimeStamps */
+        int swap = 0;
 	for(i = 0; i < numMcMemb[msgNum] - 1; i++)
         {
                 if (propTS[i] > propTS[i+1]) 
@@ -131,34 +133,38 @@ int m_send(int msgNum)
                         propTS[i+1] = swap;
                 }
         }
-	#ifdef DEBUG
-	printf("* msg_send: Proposed time stamps: ");
-	#endif
-	for(i = 0; i < numMcMemb[msgNum]; i++)
-	{
-		#ifdef DEBUG
-		printf("%d ", propTS[i]);
-		#endif
-	}
 
 	#ifdef DEBUG
-	printf("\n* msg_send: Max Time Stamp: %d\n", propTS[numMcMemb[msgNum]-1]);
+	printf("* msgSend: Proposed time stamps: ");
+	for(i = 0; i < numMcMemb[msgNum]; i++)
+	{
+		printf("%d ", propTS[i]);
+	}
+	#endif
+
+	#ifdef DEBUG
+	printf("\n* msgSend: Max Time Stamp: %d\n", propTS[numMcMemb[msgNum]-1]);
 	#endif
 	
+	/* Use Semaphore to access the Lamport Logical Clock */
 	sem_wait(&semTimeStamp);
 	timeStamp = ++gTimeStamp;
 	sem_post(&semTimeStamp);
 
+	/* Sending FINAL Message */
 	for(i = 0; i < numMcMemb[msgNum]; i++)
 	{
 		sendMsg(FINAL, mcMemb[msgNum][i], propTS[numMcMemb[msgNum]-1], timeStamp);
 	}
 
 	printf("* -------------------------------------------------------------------\n");
-
 	return 0;
 }
 
+/* 
+ * Sends messages to a given Destination (rcvid) 
+ * Used by both msgSend and msgReceive
+ */
 int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 {
 	int portN;
@@ -168,6 +174,7 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 	char ipAddr[20];
 	FILE *fp = NULL;
 
+	/* Open "ipconfig.dat" file to read the destination IP and Port Number */
 	fp = fopen("ipconfig.dat", "r+");
 	if(NULL == fp)  exit(-1);
 
@@ -186,16 +193,18 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 		}
 	}
 
-	int semVal;
 	strMsg msgBuf;
-	int connSock, ret, in, flags;
-	time_t currentTime;
+	int connSock, ret;
 	struct sockaddr_in servaddr;
-	struct sctp_sndrcvinfo sndrcvinfo;
 	struct sctp_event_subscribe events;
 
 	/* Create an SCTP TCP-Style Socket */
 	connSock = socket( AF_INET, SOCK_STREAM, IPPROTO_SCTP );
+	if(-1 == connSock)
+	{
+		perror("* Error creating Socket Object: ");
+		exit(-1);
+	}	
 
 	/* Specify the peer endpoint to which we'll connect */
 	bzero( (void *)&servaddr, sizeof(servaddr) );
@@ -207,12 +216,14 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 	ret = connect( connSock, (struct sockaddr *)&servaddr, sizeof(servaddr) );
 	if(-1 == ret)
 	{
-		printf("* sendMsg: Sending %d to %s\n", type, ipAddr);
-		perror("* sendMsg: Connection to Server Failed: ");
 		usleep(1000);
 		ret = connect( connSock, (struct sockaddr *)&servaddr, sizeof(servaddr) );
 		if(-1 == ret)
+		{
+			printf("* sendMsg: Sending %d to %s\n", type, ipAddr);
+			perror("* sendMsg: Connection to Server Failed: ");
 			return -1;
+		}
 	}
 
 	/* Enable receipt of SCTP Snd/Rcv Data via sctp_recvmsg */
@@ -220,8 +231,7 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 	events.sctp_data_io_event = 1;
 	setsockopt( connSock, SOL_SCTP, SCTP_EVENTS, (const void *)&events, sizeof(events) );
 
-	/* New client socket has connected */
-
+	/* Fill the message to be Sent */
 	msgBuf.type = type;
 
 	if(PROPOSED != type) msgBuf.msgId = (msgCount << 6) | usrPID;
@@ -232,7 +242,9 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 	msgBuf.propTimeStamp = propTimeStamp;
 	msgBuf.timeStamp = timeStamp;
 
-	printf("* m_send: Sending %d, %d to %s\n", msgBuf.type, msgBuf.msgId, ipAddr);
+	printf("* msgSend: Sending %d, %d to %s\n", msgBuf.type, msgBuf.msgId, ipAddr);
+
+	/* SCTP Send Call */
 	ret = sctp_sendmsg( connSock, (void *)&msgBuf, (size_t)sizeof(strMsg), NULL, 0, 0, 0, 0, 0, 0 );
 	if(-1 == ret)
 	{
@@ -240,11 +252,16 @@ int sendMsg(int type, int rcvId, int propTimeStamp, int timeStamp)
 		perror("");
 	}
 
-	/* Close our socket and exit */
+	/* Close socket */
 	close(connSock);
 	return 0;
 }
 
+
+/* ------------------------ PRIORITY QUEUE IMPLEMENTATION START ------------------------ */
+/* 
+ * INSERT function - To insert into Priority Queue 
+ */
 strMsgQ* head = NULL;
 int insert(strMsg argMsg)
 {
@@ -363,6 +380,10 @@ int insert(strMsg argMsg)
         }
         return 0;
 }
+
+/* 
+ * DELETE function - To delete node from Priority Queue using Unique MsgId.
+ */
 int delete(int msgId)
 {
         strMsgQ* curPtr = NULL;
@@ -391,6 +412,9 @@ int delete(int msgId)
         return 0;
 }
 
+/* 
+ * GETMIN function - Returns the First Entry and removes it from Priority Queue if it is "Deliverable" 
+ */
 int getMin(strMsg *argMsg)
 {
 	if(recvMsgCount >= memSet) 
@@ -402,6 +426,7 @@ int getMin(strMsg *argMsg)
 	{
 		return -2;
 	}
+	/* If Type is INITIAL, then it is not deliverable, so wait */
 	else if(INITIAL == head->type)
 	{
 		printf("* ---------------\n");
@@ -424,7 +449,9 @@ int getMin(strMsg *argMsg)
         return 0;
 }
 
-
+/* 
+ * DISPLAY function - Prints the current nodes in Priority Queue 
+ */
 void display()
 {
         strMsgQ* curPtr = NULL;
@@ -438,6 +465,10 @@ void display()
         printf("\n");
 }
 
+/* 
+ * REPLACE function - Replace a node if its proposed time stamp value changes or just change 
+ * the type from INITIAL to FINAL.
+ */
 int replace(strMsg argMsg)
 {
         strMsgQ* curPtr = NULL;
@@ -449,12 +480,10 @@ int replace(strMsg argMsg)
 			if(argMsg.propTimeStamp == curPtr->propTimeStamp)
 			{
 				curPtr->type = argMsg.type;
-			//	printf("****** No Change ******\n");
 				return 0;
 			}
 			else
 			{
-			//	printf("****** Changed %d -> %d\n", curPtr->propTimeStamp, argMsg.propTimeStamp);
 				delete(argMsg.msgId);
 				insert(argMsg);
 				return 0;
@@ -462,28 +491,33 @@ int replace(strMsg argMsg)
 		}
 		curPtr = curPtr->next;
 	}
+	return 0;
 }
+/* ------------------------ PRIORITY QUEUE IMPLEMENTATION END ------------------------ */
 
-int m_receive()
+/* 
+ * Implements Receive thread
+ * Handles the receive part of Skeen' Algorithm
+ * Receives INITIAL, PROPOSED and FINAL Messages.
+ * Owns the Socket binded to the IP and Port Number.
+ */
+void* msgReceive()
 {
-	strMsg msgBuf;
-	char ipAddr[20];
-	time_t currentTime;
-	struct sockaddr_in servaddr;
-	int listenSock, connSock, ret;
-
-        int in, i, flags;
-        struct sctp_sndrcvinfo sndrcvinfo;
-        struct sctp_event_subscribe events;
-
         int portN;
         int chkID;
         char* cPtr;
+        int in, flags;
+	strMsg msgBuf;
         char line[50];
         FILE *fp = NULL;
 	int timeStamp = 0;
 	int propTimeStamp;
+	struct sockaddr_in servaddr;
+	int listenSock, connSock, ret;
+        struct sctp_sndrcvinfo sndrcvinfo;
+        struct sctp_event_subscribe events;
 
+	/* Reads IP and Port Num to bind it to the Socket */
         fp = fopen("ipconfig.dat", "r");
         if(NULL == fp)  exit(-1);
 
@@ -495,7 +529,7 @@ int m_receive()
                         cPtr = line;
                         sscanf(cPtr, "%*d %d", &portN);
 			#ifdef DEBUG
-                        printf("* m_receive: My Port Number: %d\n", portN);
+                        printf("* msgReceive: My Port Number: %d\n", portN);
 			#endif
                         break;
                 }
@@ -505,8 +539,13 @@ int m_receive()
 
 	/* Create SCTP TCP-Style Socket */
 	listenSock = socket( AF_INET, SOCK_STREAM, IPPROTO_SCTP );
+	if(-1 == listenSock)
+	{
+		perror("* Error creating Socket Object: ");
+		exit(-1);
+	}	
 	#ifdef DEBUG
-	printf("* m_receive: Socket FD: %d\n", listenSock);
+	printf("* msgReceive: Socket FD: %d\n", listenSock);
 	#endif
 
 	/* Accept connections from any interface */
@@ -515,31 +554,29 @@ int m_receive()
 	servaddr.sin_addr.s_addr = htonl( INADDR_ANY );
 	servaddr.sin_port = htons(portN);
 
-	/* Bind to the wildcard address (all) and MY_PORT_NUM */
+	/* Bind to the wildcard address (all) and Port Number */
 	ret = bind( listenSock, (struct sockaddr *)&servaddr, sizeof(servaddr) );
 	if(-1 == ret)
 	{
-		perror("* m_receive: Error Binding Socket: ");
+		perror("* msgReceive: Error Binding Socket: ");
 		exit(-1);
 	}
 	#ifdef DEBUG
-	printf("* m_receive: Bind Return: %d\n", ret);
+	printf("* msgReceive: Bind Return: %d\n", ret);
 	#endif
 
-	/* Place the server socket into the listening state */
+	/* Place Socket into the listening state */
 	listen( listenSock, 128 );
 
-	/* Server loop... */
 	while( 1 ) 
 	{
 		/* Await a new client connection */
-		connSock = accept( listenSock, (struct sockaddr *)NULL, (int *)NULL );
+		connSock = accept( listenSock, (struct sockaddr *)NULL, NULL );
 		if(-1 == connSock)
 		{
-			perror("* m_receive: Accepting Connection Failed: ");
+			perror("* msgReceive: Accepting Connection Failed: ");
 			continue;
 		}
-	//	printf("* m_receive: Connection Accepted: %d\n", connSock);
 
 		/* Enable receipt of SCTP Snd/Rcv Data via sctp_recvmsg */
 		memset( (void *)&events, 0, sizeof(events) );
@@ -548,19 +585,23 @@ int m_receive()
 		flags = 0;
 		
 		memset(&msgBuf, 0, sizeof(strMsg));
+
+		/* SCTP Receive call */
 		in = sctp_recvmsg( connSock, (void *)&msgBuf, sizeof(strMsg), (struct sockaddr *)NULL, 0, &sndrcvinfo, &flags );
 		if(-1 == in)
 		{
 			perror("* Error Receiving: ");
 			continue;
 		}
-	
+
+		/* Access Lamport Logical Clock via Semaphore */
 		sem_wait(&semTimeStamp);
 		gTimeStamp = MAX(gTimeStamp, msgBuf.timeStamp) + 1;
 		sem_post(&semTimeStamp);
 
-		printf("* m_receive: Receiving %d, %d from %d\n", msgBuf.type, msgBuf.propTimeStamp, msgBuf.sendId);
+		printf("* msgReceive: Receiving %d, %d from %d\n", msgBuf.type, msgBuf.propTimeStamp, msgBuf.sendId);
 
+		/* Handles INITIAL Message */
 		if(INITIAL == msgBuf.type)
 		{
 			sem_wait(&semTimeStamp);
@@ -570,7 +611,7 @@ int m_receive()
 			sem_post(&semTimeStamp);
 
 			#ifdef DEBUG
-			printf("* m_receive INITIAL: Proposing Time Stamp: %d\n", propTimeStamp);	
+			printf("* msgReceive INITIAL: Proposing Time Stamp: %d\n", propTimeStamp);	
 			#endif
 
 			msgBuf.propTimeStamp = propTimeStamp;
@@ -581,24 +622,26 @@ int m_receive()
 
 			sendMsg(PROPOSED, msgBuf.sendId, propTimeStamp, timeStamp);
 		}
+		/* Handles PROPOSED Message */
 		else if(PROPOSED == msgBuf.type)
 		{
 			#ifdef DEBUG
-			printf("* m_receive PROPOSED: Recevied Proposed Time Stamp: %d\n", msgBuf.propTimeStamp);	
+			printf("* msgReceive PROPOSED: Recevied Proposed Time Stamp: %d\n", msgBuf.propTimeStamp);	
 			#endif
 			sem_wait(&semSharedMem1);
 			gMsgShare.propTimeStamp = msgBuf.propTimeStamp;
 			sem_post(&semSharedMem);
 		}
+		/* Handles FINAL Message */
 		else if(FINAL == msgBuf.type)
 		{
 			sem_wait(&semQueue);
-		//	display();
 			#ifdef DEBUG
-			printf("* m_receive FINAL: Recevied Final Proposed TS: %d\n", msgBuf.propTimeStamp);	
+			printf("* msgReceive FINAL: Recevied Final Proposed TS: %d\n", msgBuf.propTimeStamp);	
 			#endif
+
 			replace(msgBuf);
-		//	display();
+
 			sem_post(&semQueue);
 			printf("* ---------------------------------------\n");
 		}
@@ -606,12 +649,16 @@ int m_receive()
 		printf("* -------------------------------------------------------------------\n");
 		#endif
 
-		/* Close the client connection */
+		/* Close the connection */
 		close( connSock );
 	}
-	
-	return 0;
+	return NULL;
 }
+
+/* 
+ * Skeen Module Main Function 
+ * Does Send part and creates a Receive Thread to handle the receive part of Skeen's Algorithm
+ */
 int main()
 {
         int i, j;
@@ -625,11 +672,13 @@ int main()
 	FILE *fp = NULL;
         char hostName[30];
 
+	/* Semaphore Initialization */
         sem_init(&semTimeStamp, 0, 1);
         sem_init(&semSharedMem, 0, 0);
         sem_init(&semSharedMem1, 0, 1);
         sem_init(&semQueue, 0, 1);
 
+	/* Get Process ID Ex. Net01 -> 01, Net02 -> 02. */
         if(-1 == gethostname(hostName, sizeof(hostName)))
         {
                 printf("* Enter Process ID\n");
@@ -653,8 +702,8 @@ int main()
         printf("* Pid String is %s\n", pidStr);	
 	#endif
 
+	/* Creates the Send Log File */
 	sprintf(sendFile, "SendOrder_%d", usrPID);
-
         fpSend = fopen( sendFile, "w+");
         if(NULL == fpSend)  
 	{
@@ -662,6 +711,7 @@ int main()
 		exit(-1);
 	}
 	
+	/* Read Input Information from "msgconfig.dat" */
         fp = fopen("msgconfig.dat", "r");
         if(NULL == fp)  exit(-1);
 
@@ -713,7 +763,6 @@ int main()
 					if(NULL != strchr(cPtr, '>'))
 					{
 						ePtr = strchr(cPtr, '>');
-					//      printf("* Bytes: [%x - %x] = %d\n", *ePtr, *sPtr, ePtr-sPtr);
 						memcpy(msgData[i], ++cPtr, ePtr-sPtr);
 						msgData[i][ePtr-sPtr] = '\0';
 						#ifdef DEBUG
@@ -746,15 +795,19 @@ int main()
 	}
 	fclose(fp); 
 	fp = NULL;
-	
+
+	/* If no messages to Send or Receive Exit */
 	if(0 == numMcMsg && 0 == memSet) 
 	{
 		printf("* No Messages to Send or Receive\n");
 		exit(0);
 	}
-	pthread_t receiveThread;
-	pthread_create(&receiveThread, NULL, m_receive, NULL);
 
+	/* Create Receive Thread */
+	pthread_t receiveThread;
+	pthread_create(&receiveThread, NULL, msgReceive, NULL);
+
+	int ret;
         int status = 0;
 	strMsg msgLocal;
         strPipeMsg pipeMsg;
@@ -762,7 +815,15 @@ int main()
         printf("* Skeen Algorithm Running\n");
         while(1)
         {
-                read(READ_FD, &pipeMsg, sizeof(strPipeMsg));
+		memset(&pipeMsg, 0, sizeof(strPipeMsg));
+
+		/* Read from Pipe to receive command */
+                ret = read(READ_FD, &pipeMsg, sizeof(strPipeMsg));
+		if(-1 == ret)
+		{
+			perror("* Error Reading From Pipe: ");
+			continue;
+		}
                 if(SEND == pipeMsg.type)
                 {
 			#ifdef DEBUG
@@ -770,31 +831,48 @@ int main()
 			#endif
 			if (pipeMsg.sendMsgNum < numMcMsg) 
 			{
-				m_send(pipeMsg.sendMsgNum);
+				msgSend(pipeMsg.sendMsgNum);
 				status = SUCCESS;
-				write(WRITE_FD, &status, sizeof(int));
+				ret = write(WRITE_FD, &status, sizeof(int));
+				if(-1 == ret)
+				{
+					perror("* Error Writing to Pipe: ");
+					continue;
+				}
 			}
 			else
 			{
+				/* Reached Send Limit, Cant send anymore */
 				status = MAX_SEND;
-				write(WRITE_FD, &status, sizeof(int));	
+				ret = write(WRITE_FD, &status, sizeof(int));	
+				if(-1 == ret)
+				{
+					perror("* Error Writing to Pipe: ");
+					continue;
+				}
 			}
                 }
                 else if(RECEIVE == pipeMsg.type)
                 {
-			int ret;
 			sem_wait(&semQueue);
 			ret = getMin(&msgLocal); 
 			sem_post(&semQueue);
 			if(-1 == ret)	
 			{
+				/* Reached Receive Limit, Cant Receive Anymore */
 				printf("* Skeen: Received All Messages\n");
 				memset(&pipeMsg, 0, sizeof(strPipeMsg));
 				pipeMsg.type = MAX_RECEIVE;
-				write(WRITE_FD, &pipeMsg, sizeof(strPipeMsg));
+				ret = write(WRITE_FD, &pipeMsg, sizeof(strPipeMsg));
+				if(-1 == ret)
+				{
+					perror("* Error Writing to Pipe: ");
+					continue;
+				}
 			}
 			else if(-2 == ret)
 			{
+				/* No Deliverable Messages Now, so Retry Later */
 				while(1)
 				{
 					sleep(RECEIVE_RETRY_TIME);
@@ -812,7 +890,12 @@ int main()
 				#endif
 				pipeMsg.type = SUCCESS;
 				memcpy(&(pipeMsg.recvMsg), &msgLocal, sizeof(strMsg));
-				write(WRITE_FD, &pipeMsg, sizeof(strPipeMsg));
+				ret = write(WRITE_FD, &pipeMsg, sizeof(strPipeMsg));
+				if(-1 == ret)
+				{
+					perror("* Error Writing to Pipe: ");
+					continue;
+				}
 			}
                 }
 		else  if(EXIT == pipeMsg.type)

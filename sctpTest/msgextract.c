@@ -5,12 +5,14 @@
 
 int main()
 {
+	int memSet = 0;
 	int portN;
 	int usrPID;
 	int procID;
 	char* cPtr;
 	char* sPtr;
 	char* ePtr;
+	char pidStr[5];
 	char line[100];
 	int chkID;
 	int i, j;
@@ -34,6 +36,8 @@ int main()
 	printf("* Host: %s\n", cPtr);
 	sscanf(cPtr, "%2d", &usrPID);
 	printf("* Process Id: %d\n", usrPID);
+	sprintf(pidStr, "%03d", usrPID);
+	printf("* Pid String is %s\n", pidStr);
 
 	fp = fopen("msgconfig.dat", "r+");
 	if(NULL == fp)  exit(-1);
@@ -83,6 +87,14 @@ int main()
 			j = 0;
 			printf("* --------------------------------------------- \n");
 		}
+		else
+		{
+			if(strstr(line, pidStr) != NULL) 
+			{
+				memSet++;
+			}
+		}
 	}
+	printf("* Member set: %d\n", memSet);
 	return 0;
 }

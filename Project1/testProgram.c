@@ -1,3 +1,28 @@
+/*
+ * Submitted By    : Vignesh Kulothungan
+ * Subject         : Advanced Operating Systems - Project 1
+ * Module          : Test Module
+ */
+
+/*
+ * Description:
+ * Log Files created by the Application has Message Ids in their received order.
+ * Ex: m1 m2 m3 m4
+ *
+ * Add all Message Ids from all Log files to the Directed Graph.
+ *
+ * Relation between Nodes (Message Ids):
+ * If m1 is before m2 in Process 1's Log file, then m1 has an outgoind edge to m2.
+ * If m2 is delivered before m1 in some other processes Log file, then
+ * m2 will have an outgoing edge to m1. These edges will form a cycle.
+ *
+ * When a Cycle is detected, it violates the Total Order.
+ * Hence from the Log files, message Ids are extracted and added to a directed 
+ * graph. Then Depth First Search is used to find a Cycle.
+ * If Cycle Exits, Total order is Violated.
+ *
+ */
+
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
@@ -19,6 +44,7 @@ adjLL* adjList[MAX_NODE_NUM];
 int numNodes = 0;
 int* nodeArray = NULL;
 
+/* Add Node to the Adjacency List (Graph) */
 int addNode(msgId, vertex)
 {
 	int i;
@@ -134,26 +160,33 @@ int isCyclic(int msgId)
 	int i;
 	adjLL* curPtr;
 	curPtr = adjList[msgId];
-
+	
+	#ifdef PLOT
 	printf("\n%s%d [%d]-> ", tabA, msgId, curPtr->numOutgoing);
+	#endif
 
 	if(VISITED == curPtr->visited) 
 	{
 		if(1 == find(msgId)) 
 		{
+			printf("\n* -----------------------------------------------\n");
 			printf("* %d: Already Visited and In Stack -> Cycle Found\n", msgId);
-		//	print();
+			printf("* -----------------------------------------------\n");
+			printf("* Stack Trace: \n");
 			return -1;
 		}
+		#ifdef PLOT
 		printf(" Already Visited & Not in stack.");
+		#endif
 		return 0;
 	}
 
 	curPtr->visited = VISITED;
 	if(0 == curPtr->numOutgoing)
 	{
-//		printf("\n%s%d [%d]-> ", tabA, msgId, curPtr->numOutgoing);
+		#ifdef PLOT
 		printf(" No Outgoing Edges.");
+		#endif
 		return 0;
 	}
 	strcpy(tabA + strlen(tabA), " ");
@@ -170,7 +203,6 @@ int isCyclic(int msgId)
 		pop(curPtr->msgId);
 	}
 	tabA[strlen(tabA)-1] = '\0';
-//	strncpy(tabA, tabA, strlen(tabA)-1);
 	return 0;	
 }
 
@@ -184,7 +216,10 @@ int isCyclicCheck()
 		if(VISITED != curPtr->visited)
 		{
 			if(-1 == isCyclic(nodeArray[i])) return -1;
-			printf("* Starting from Another Node\n");
+
+			#ifdef PLOT
+			printf("\n* Starting from Another Node\n");
+			#endif
 		}
 	}
 	return 0;
@@ -192,26 +227,6 @@ int isCyclicCheck()
 
 int main()
 {
-	#if  0
-        addNode(401, 503);
-        addNode(504, 503);
-        addNode(402, 503);
-        addNode(503, 502);
-        addNode(503, 506);
-        addNode(503, 501);
-        addNode(503, 505);
-        addNode(505, 507);
-        addNode(505, 404);
-        addNode(404, 504);
-
-        if(0 == isCyclicCheck())
-        {
-                printf("\n* No Cycles Found\n");
-        }
-
-	return 0;
-	#endif
-
         char str[7];
         int node[10];
         char* cPtr;
@@ -234,6 +249,7 @@ int main()
         printf("* Enter number of Receive Files\n");
         scanf("%d", &num);
 
+	#if 0
 	printf("* Send Order\n");
         for(i = 1; i <= 1; i++)
 	{
@@ -267,8 +283,9 @@ int main()
                 }
                 printf("\n");
 	}
+	#endif
 
-	printf("* Recv Order\n");
+	printf("* Receive Order");
         for(i = 1; i <= num; i++)
         {
                 sprintf(recvFile , "RecvOrder_%d", i);
@@ -278,12 +295,12 @@ int main()
                         perror("* Error opening Recv File: ");
                         exit(-1);
                 }
-
+		printf("\n* Process %d Receive Log\n", i);
                 while(NULL != fgets(line, 70, fpRecv))
                 {
                         cPtr = line;
-                        printf("* %d: ", strlen(line));
-                        fflush(stdout);
+		//	printf("* %d: ", strlen(line));
+		//	fflush(stdout);
 
                         for(j = 0; j < strlen(line)/6; j++)
                         {
@@ -299,19 +316,21 @@ int main()
                         memset(line, 0, sizeof(line));
                         printf("\n");
                 }
+
+		/* Add All nodes to the Directed Graph */
 		for(k = 0; k < recvMsgNum - 1; k++)
 		{
-			printf("* Adding %d -> %d\n", recvNodeArr[k], recvNodeArr[k+1]);
 			addNode(recvNodeArr[k], recvNodeArr[k+1]);
 		}
 		recvMsgNum = 0;
-                printf("\n");
         }
 
-
+	/* Check for a Cycle in the Graph */
 	if(0 == isCyclicCheck())
 	{
-		printf("\n* No Cycles Found\n");
+		printf("\n* --------------------\n");
+		printf("* No Cycles Found\n");
+		printf("* ----------------------\n");
 	}
         return 0;
 }
