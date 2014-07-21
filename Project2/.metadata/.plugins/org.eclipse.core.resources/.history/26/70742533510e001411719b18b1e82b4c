@@ -1,0 +1,78 @@
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+
+import javax.swing.Timer;
+
+import com.sun.nio.sctp.SctpChannel;
+import com.sun.nio.sctp.SctpServerChannel;
+
+public class InterruptTimer extends Thread implements ActionListener {
+
+	/**
+	 * @param args
+	 */
+	Timer timer;
+	private SctpChannel localSock;
+	
+	InterruptTimer(SctpChannel sc) {
+		timer = new Timer(2000, this);
+		timer.start();
+		this.localSock = sc;
+	}
+
+	public static void main(String[] args) {
+
+		while (true) 
+		{
+			InetSocketAddress serverAddr;
+			ByteBuffer buffer = ByteBuffer.allocateDirect(60);
+
+			InterruptTimer local;
+			SctpServerChannel rcvServer = null;
+			try {
+				rcvServer = SctpServerChannel.open();
+			} catch (IOException e2) {
+				// TODO Auto-generated catch block
+				e2.printStackTrace();
+			}
+			serverAddr = new InetSocketAddress(15015);
+			try {
+				rcvServer.bind(serverAddr);
+			} catch (IOException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
+			while(true)
+			{
+				try {
+					System.out.println("Waiting On Receive");
+					SctpChannel rcvSocket = rcvServer.accept();
+					local = new InterruptTimer(rcvSocket);
+					buffer.clear();
+					rcvSocket.receive(buffer, null, null);
+					System.out.println("Received");
+					buffer.flip();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent arg0) {
+		// TODO Auto-generated method stub
+		System.out.println("* Timer Expired");
+		try {
+			System.out.println("Closing Sock");
+			this.localSock.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+}

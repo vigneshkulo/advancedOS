@@ -1,0 +1,64 @@
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.util.Scanner;
+
+import javax.swing.Timer;
+
+import com.sun.nio.sctp.MessageInfo;
+import com.sun.nio.sctp.SctpChannel;
+
+public class InterruptTimer extends Thread implements ActionListener {
+
+	/**
+	 * @param args
+	 */
+	Timer timer;
+
+	InterruptTimer() {
+		timer = new Timer(2000, this);
+		timer.start();
+	}
+
+	public static void main(String[] args) {
+
+		InterruptTimer local = new InterruptTimer();
+		while (true) 
+		{
+			InetSocketAddress serverAddr = new InetSocketAddress("localhost",
+					15000);
+			ByteBuffer buf = ByteBuffer.allocateDirect(60);
+
+			SctpChannel sc = null;
+			try {
+				sc = SctpChannel.open(serverAddr, 0, 0);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			/* expect two messages and two notifications */
+			MessageInfo messageInfo = null;
+
+			try {
+				messageInfo = sc.receive(buf, System.out, null);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent arg0) {
+		// TODO Auto-generated method stub
+		System.out.println("* Timer Expired");
+		interrupt();
+	}
+
+	public void interrupt() {
+		this.interrupt();
+	}
+
+}

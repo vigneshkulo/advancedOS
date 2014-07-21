@@ -1,0 +1,68 @@
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.util.Scanner;
+
+import javax.swing.Timer;
+
+import com.sun.nio.sctp.MessageInfo;
+import com.sun.nio.sctp.SctpChannel;
+
+public class InterruptTimer extends Thread implements ActionListener {
+
+	/**
+	 * @param args
+	 */
+	Timer timer;
+	private final SctpChannel localSock;
+	
+	InterruptTimer(SctpChannel sc) {
+		timer = new Timer(2000, this);
+		timer.start();
+		this.localSock = sc;
+	}
+
+	public static void main(String[] args) {
+
+		while (true) 
+		{
+			InetSocketAddress serverAddr = new InetSocketAddress("localhost",
+					15000);
+			ByteBuffer buf = ByteBuffer.allocateDirect(60);
+
+			SctpChannel sc = null;
+			InterruptTimer local;
+			try {
+				sc = SctpChannel.open(serverAddr, 0, 0);
+				local = new InterruptTimer(sc);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			/* expect two messages and two notifications */
+			MessageInfo messageInfo = null;
+
+			try {
+				System.out.println("Waiting For Message");
+				messageInfo = sc.receive(buf, System.out, null);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent arg0) {
+		// TODO Auto-generated method stub
+		System.out.println("* Timer Expired");
+		try {
+			this.localSock.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+}

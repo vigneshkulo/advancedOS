@@ -1,0 +1,61 @@
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.Scanner;
+
+public class Application {
+	static int procId;
+	static int totalNodes;
+	FileSystem localFS = new FileSystem();
+	
+	public static void main(String[] args) {
+		int status = 0;
+		String hostName;
+		
+		Application.totalNodes = Integer.parseInt(args[0]);
+		Application localApp = new Application();
+		
+		try {
+			hostName = InetAddress.getLocalHost().getHostName();
+			hostName = hostName.replaceAll("[^0-9]", "");
+			Application.procId = Integer.parseInt(hostName);
+			System.out.println("* --------------------------");
+			System.out.println("* I am : " + Application.procId + ", Total Nodes: " + Application.totalNodes);
+			System.out.println("* --------------------------");
+
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
+		localApp.localFS.initialize();
+		System.exit(0);
+		
+		Scanner reader = new Scanner(System.in);
+		System.out.print("Enter 1. Send, 2. Receive: ");
+		reader.nextInt();
+		reader.close();
+		
+		status = localApp.checkOut();
+		status = localApp.readFile();
+		status = localApp.writeFile();
+		status = localApp.checkIn();
+
+		System.out.println("* Return Status : " + status);
+	}
+	private int checkOut() {
+		localFS.acquireLock();
+		System.out.println("* File Checked Out");
+		return 0;
+	}
+	private int checkIn() {
+		System.out.println("* File Checked In");
+		return 0;
+	}
+	private int writeFile() {
+		System.out.println("* File Written");
+		return 0;		
+	}
+	private int readFile() {
+		System.out.println("* File Read");
+		return 0;
+	}
+
+}

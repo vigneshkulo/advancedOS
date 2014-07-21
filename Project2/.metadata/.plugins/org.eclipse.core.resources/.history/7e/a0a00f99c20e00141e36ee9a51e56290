@@ -1,0 +1,80 @@
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.Scanner;
+
+public class Application {
+
+	static int procId;
+	static int totalNodes;
+	FileSystem localFS = new FileSystem();
+	
+	public static void main(String[] args) {
+		
+		int choice;
+		int status = 0;
+		String hostName;
+		
+		Application.totalNodes = Integer.parseInt(args[0]);
+		Application localApp = new Application();
+		
+		try {
+			hostName = InetAddress.getLocalHost().getHostName();
+			hostName = hostName.replaceAll("[^0-9]", "");
+			Application.procId = Integer.parseInt(hostName);
+			System.out.println("* --------------------------");
+			System.out.println("* I am : " + Application.procId + ", Total Nodes: " + Application.totalNodes);
+			System.out.println("* --------------------------");
+
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
+		localApp.localFS.initialize();
+		
+		Scanner reader = new Scanner(System.in);
+		System.out.print("* Application: Enter 1. Read, 2. Write: ");
+		choice = reader.nextInt();
+		reader.close();
+		
+		switch(choice)
+		{
+			case 1: status = localApp.checkOut(FileSystem.SHARED_MODE);
+			break;
+			
+			case 2: status = localApp.checkOut(FileSystem.EXCLUSIVE_MODE);
+			break;
+			
+			default: 
+				System.out.println("* Application: Enter Valid Choice");
+				break;
+		}
+		
+		System.out.println("* ---------------------------------------");
+		System.out.println("* Application: Return Status : " + status);
+		return;
+	}
+	
+	private int checkOut(int mode) {
+		int ret;
+		ret = localFS.acquireMyLock(mode);
+		if(-1 == ret)
+		{
+			System.out.println("* File Currently in Exclusive Mode");
+			return -1;
+		}
+		ret = localFS.acquireLock(mode);
+		return ret;
+	}
+//	private int checkIn() {
+//		System.out.println("* File Checked In");
+//		return 0;
+//	}
+//	private int writeFile() {
+//		System.out.println("* File Written");
+//		return 0;		
+//	}
+//	private int readFile() {
+//		System.out.println("* File Read");
+//		return 0;
+//	}
+
+}

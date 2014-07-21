@@ -1,0 +1,63 @@
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.Scanner;
+
+public class Application {
+	static int procId;
+	FileSystem localFS = new FileSystem();
+	
+	public static void main(String[] args) {
+		int status = 0;
+		int choice = 0;
+		String hostName;
+		Application localApp = new Application();
+		
+		Scanner reader = new Scanner(System.in);
+		System.out.print("Enter 1. Send, 2. Receive: ");
+		choice = reader.nextInt();
+		switch(choice)
+		{
+		case 1: 
+			break;
+		case 2:
+			break;
+		default:
+				break;
+		}
+		reader.close();
+		
+		localApp.localFS.initialize();
+		try {
+			hostName = InetAddress.getLocalHost().getHostName();
+			hostName = hostName.replaceAll("[^0-9]", "");
+			Application.procId = Integer.parseInt(hostName);
+			System.out.println("* I am : " + Application.procId);
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
+		status = localApp.checkOut();
+		status = localApp.readFile();
+		status = localApp.writeFile();
+		status = localApp.checkIn();
+
+		System.out.println("* Return Status : " + status);
+	}
+	private int checkOut() {
+		localFS.acquireLock();
+		System.out.println("* File Checked Out");
+		return 0;
+	}
+	private int checkIn() {
+		System.out.println("* File Checked In");
+		return 0;
+	}
+	private int writeFile() {
+		System.out.println("* File Written");
+		return 0;		
+	}
+	private int readFile() {
+		System.out.println("* File Read");
+		return 0;
+	}
+
+}

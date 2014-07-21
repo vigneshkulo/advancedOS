@@ -1,0 +1,37 @@
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.util.Scanner;
+
+import javax.swing.Timer;
+
+
+public class InterruptTimer implements ActionListener{
+
+	/**
+	 * @param args
+	 */
+	Timer timer;
+
+	InterruptTimer()
+	{
+		timer = new Timer(2000, this);
+		timer.start();
+	}
+	public static void main(String[] args) {
+
+		InterruptTimer local = new InterruptTimer();
+		while(true)
+		{
+			Scanner reader = new Scanner(System.in);
+			System.out.print("Enter 1. Send, 2. Receive: ");
+			reader.nextInt();
+			reader.close();
+		}
+	}
+	@Override
+	public void actionPerformed(ActionEvent arg0) {
+		// TODO Auto-generated method stub
+		System.out.println("* Timer Expired");
+	}
+
+}
