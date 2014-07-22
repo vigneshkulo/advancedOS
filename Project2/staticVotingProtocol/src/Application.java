@@ -50,7 +50,7 @@ public class Application {
 				break;
 				
 				case 2: status = localApp.checkOut(FileSystem.EXCLUSIVE_MODE);
-						FileSystem.versionNum++;
+						status = localApp.writeFile();
 						status = localApp.checkIn(FileSystem.EXCLUSIVE_MODE);
 				break;
 				
@@ -104,10 +104,21 @@ public class Application {
 
 		return 0;
 	}
-//	private int writeFile() {
-//		System.out.println("* File Written");
-//		return 0;		
-//	}
+	private int writeFile() {
+		int ret;
+		
+		ret = localFS.writeFileAndUpdateOthers();
+		if(-1 == ret)
+		{
+			System.out.println("* Application: Writing Failed");
+			return -1;
+		}
+		System.out.println("* --------------------------");
+		System.out.println("* Application: File Written");
+		System.out.println("* --------------------------");
+
+		return 0;		
+	}
 	private int readFile() {
 		System.out.println("* --------------------------");
 		System.out.println("* Application: File Read");

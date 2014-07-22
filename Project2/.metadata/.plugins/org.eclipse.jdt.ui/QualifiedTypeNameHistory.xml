@@ -31,4 +31,9 @@
 <fullyQualifiedTypeName name="com.sun.nio.sctp.SctpChannel"/>
 <fullyQualifiedTypeName name="InterruptTimer"/>
 <fullyQualifiedTypeName name="java.nio.channels.AsynchronousCloseException"/>
+<fullyQualifiedTypeName name="java.io.FileWriter"/>
+<fullyQualifiedTypeName name="java.io.PrintWriter"/>
+<fullyQualifiedTypeName name="java.util.ArrayList"/>
+<fullyQualifiedTypeName name="java.util.HashMap"/>
+<fullyQualifiedTypeName name="java.util.Random"/>
 </qualifiedTypeNameHistroy>

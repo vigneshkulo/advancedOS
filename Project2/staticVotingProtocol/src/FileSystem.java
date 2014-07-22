@@ -3,7 +3,9 @@ import java.awt.event.ActionListener;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -11,6 +13,9 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharsetEncoder;
+import java.util.ArrayList;
+import java.util.Random;
+
 import javax.swing.Timer;
 
 import com.sun.nio.sctp.*;
@@ -19,21 +24,27 @@ public class FileSystem implements Runnable, ActionListener {
 	static final int SHARED_MODE = 1;
 	static final int EXCLUSIVE_MODE = 2;
 	static final int RELEASE = 3;
+	static final int WRITE = 4;
 	private static final int FALSE = -1;
 
 	int[] portN = new int[45];
+	int[] voteWgt = new int[45];
 	String[] ipAddr = new String[45];
 
 	int[] lockMembers = new int[45];
-
+	
+	ArrayList<Integer> verNumList = new ArrayList<Integer>();
+	
 	Timer timer;
 	private SctpChannel localSock;
 
-	static int sharedCount = 0;
-	static int readQSize;
-	static int writQSize;
+	static int lockCount = 0;
+	static int readQSize = 0;
+	static int writQSize = 0;
+	static int totalVotes = 0;
 	static int versionNum = 0;
-	static int accessMode;
+	static int accessMode = 0;
+	static int sharedCount = 0;
 
 	public void run() {
 		System.out.println("* FS: Thread Started");
@@ -58,7 +69,7 @@ public class FileSystem implements Runnable, ActionListener {
 			rcvServer.bind(serverAddr);
 			System.out.println("* FS: Socket Created with PN: "
 					+ portN[Application.procId - 1]);
-
+			System.out.println();
 			while (true) {
 				rcvSocket = rcvServer.accept();
 				buffer.clear();
@@ -66,12 +77,20 @@ public class FileSystem implements Runnable, ActionListener {
 				buffer.flip();
 
 				rcvData = decoder.decode(buffer).toString();
-				System.out
-						.println("\n* -------------------------------------------");
+				System.out.println("* -------------------------------------------");
 				System.out.println("* Receive Buffer Contents are: " + rcvData);
 
 				tokens = rcvData.split("-");
 				System.out.println("* Request Mode: " + tokens[0] + ", Current Mode" + accessMode);
+				
+				/* Write Data Message */
+				if(WRITE == Integer.parseInt(tokens[0])) {
+					System.out.println("* FS: Data to be Updated: " + tokens[1]);
+					writeFile(tokens[1]);
+					continue;
+				}
+				
+				/* Release Lock Message */
 				if (RELEASE == Integer.parseInt(tokens[0])) {
 					if (SHARED_MODE == accessMode) {
 						if (1 == sharedCount)
@@ -84,6 +103,8 @@ public class FileSystem implements Runnable, ActionListener {
 					System.out.println("* Lock Released: " + accessMode);
 					continue;
 				}
+				
+				/* Acquire Lock Message */
 				if (EXCLUSIVE_MODE == Integer.parseInt(tokens[0])) {
 					if (0 == accessMode) {
 						rplyData = Integer.toString(versionNum);
@@ -124,7 +145,6 @@ public class FileSystem implements Runnable, ActionListener {
 				// try {
 				// Thread.sleep(5000);
 				// } catch (InterruptedException e1) {
-				// // TODO Auto-generated catch block
 				// e1.printStackTrace();
 				// }
 
@@ -153,7 +173,7 @@ public class FileSystem implements Runnable, ActionListener {
 
 	public int acquireLock(int mode) {
 
-		int lockCount = 0;
+		int voteCount = 0;
 		String sendData = null;
 		String rplyData = null;
 		SctpChannel[] sendSocket = new SctpChannel[Application.totalNodes];
@@ -166,6 +186,7 @@ public class FileSystem implements Runnable, ActionListener {
 		CharsetDecoder decoder = charset.newDecoder();
 
 		timer = new Timer(2000, this);
+		voteCount = voteWgt[Application.procId - 1];
 		lockCount = 1;
 		int lockSize = 0;
 
@@ -179,7 +200,7 @@ public class FileSystem implements Runnable, ActionListener {
 			if (i + 1 == Application.procId)
 				continue;
 
-			if (lockSize == lockCount)
+			if (voteCount >= lockSize)
 				break;
 
 			System.out.println("* ---------------------------------------");
@@ -241,8 +262,11 @@ public class FileSystem implements Runnable, ActionListener {
 				sendSocket[i].close();
 
 				if (FALSE != Integer.parseInt(rplyData)) {
+					verNumList.add(Integer.parseInt(rplyData));
 					lockMembers[lockCount - 1] = i + 1;
+					voteCount += voteWgt[i];
 					lockCount++;
+					System.out.println("* FS: Current Weight: " + voteCount);
 				}
 
 			} catch (IOException e) {
@@ -254,10 +278,10 @@ public class FileSystem implements Runnable, ActionListener {
 		System.out.println("* ---------------------------------------");
 
 		System.out.print("* FS: Lock Members: ");
-		for (int i = 0; i < lockSize - 1; i++)
+		for (int i = 0; i < lockCount - 1; i++)
 			System.out.print(lockMembers[i] + ", ");
 		System.out.println();
-		if (lockSize == lockCount)
+		if (voteCount >= lockSize)
 			return 0;
 		else
 			return -1;
@@ -265,15 +289,18 @@ public class FileSystem implements Runnable, ActionListener {
 
 	public void initialize() {
 		readIP();
-		writQSize = Application.totalNodes / 2 + 1;
-		readQSize = Application.totalNodes - writQSize + 1;
+		writQSize = (int) (Math.ceil((double)totalVotes / 2)) + 1;
+		readQSize = totalVotes - writQSize + 1;
+		System.out.println("* FS: Total Votes: " + totalVotes);
 		System.out.println("* FS: Read Quorum Size: " + readQSize);
 		System.out.println("* FS: Writ Quorum Size: " + writQSize);
+		writeFile(Integer.toString(0) + "," + " ");
 		(new Thread(new FileSystem())).start();
 	}
 
 	public void readIP() {
 		int node = 0;
+		totalVotes = 0;
 		BufferedReader br = null;
 		String strLine = "";
 		String[] tokens;
@@ -287,7 +314,10 @@ public class FileSystem implements Runnable, ActionListener {
 				tokens = strLine.split(" ");
 				portN[node] = Integer.parseInt(tokens[1]);
 				ipAddr[node] = tokens[2];
+				voteWgt[node] = Integer.parseInt(tokens[3]);
+				totalVotes += voteWgt[node];
 				node++;
+				if(Application.totalNodes <= node) break;
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -296,7 +326,6 @@ public class FileSystem implements Runnable, ActionListener {
 
 	@Override
 	public void actionPerformed(ActionEvent arg0) {
-		// TODO Auto-generated method stub
 		System.out.println("* FS: Timer Expired");
 		try {
 			if (null != this.localSock) {
@@ -307,7 +336,6 @@ public class FileSystem implements Runnable, ActionListener {
 				}
 			}
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
@@ -319,9 +347,11 @@ public class FileSystem implements Runnable, ActionListener {
 		if (EXCLUSIVE_MODE != accessMode && EXCLUSIVE_MODE != mode) {
 			accessMode = SHARED_MODE;
 			sharedCount++;
+			verNumList.add(versionNum);
 			return 0;
 		} else if (EXCLUSIVE_MODE == mode && 0 == accessMode) {
 			accessMode = EXCLUSIVE_MODE;
+			verNumList.add(versionNum);
 			return 0;
 		} else
 			return -1;
@@ -354,18 +384,11 @@ public class FileSystem implements Runnable, ActionListener {
 		Charset charset = Charset.forName("ISO-8859-1");
 		CharsetEncoder encoder = charset.newEncoder();
 
-		int lockSize = 0;
-
-		if (SHARED_MODE == mode)
-			lockSize = readQSize;
-		else if (EXCLUSIVE_MODE == mode)
-			lockSize = writQSize;
-
 		System.out.println("* ---------------------------------------");
 		System.out.println("* FS: Releasing Locks");
 
 		/* Send a request for Lock and Receive a Reply */
-		for (int i = 0; i < lockSize - 1; i++) {
+		for (int i = 0; i < lockCount - 1; i++) {
 
 			System.out.println("* ---------------------------------------");
 			System.out.println("* FS: Connecting to: "
@@ -404,6 +427,114 @@ public class FileSystem implements Runnable, ActionListener {
 			charbuf.clear();
 
 		}
+		verNumList.clear();
+		return 0;
+	}
+	public int comparator(ArrayList<Integer> versions) {
+		int maximum = versions.get(0);
+		
+		System.out.print("* FS: Version Numbers: " + maximum + " ");
+		for (int i = 1; i < versions.size(); i++) {
+			System.out.print(versions.get(i) + " ");
+			if (versions.get(i) > maximum) {
+				maximum = versions.get(i);
+			}
+		}
+		System.out.println();
+		return maximum;
+	}
+
+	public String randomString() {
+		char[] chars = "abcdefghijklmnopqrstuvwxyz".toCharArray();
+		StringBuilder sb = new StringBuilder();
+		Random random = new Random();
+		for (int i = 0; i < 3; i++) {
+			char c = chars[random.nextInt(chars.length)];
+			sb.append(c);
+		}
+		String output = sb.toString();
+		return output;
+	}
+
+	public void writeFile(String data) {
+		String fname = "file" + Application.procId;
+		try {
+			String[] divide = data.split(",");
+			FileWriter fout = new FileWriter(fname, false);
+			PrintWriter fileout = new PrintWriter(fout, true);
+
+			versionNum = Integer.parseInt(divide[0]);
+
+			fileout.println("VersionNumber:" + divide[0]);
+			fileout.print("Data:" + divide[1]);
+			fileout.flush();
+			fileout.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	protected int writeFileAndUpdateOthers() {
+		int newVersion = comparator(verNumList) + 1;
+		String data = randomString();
+		System.out.println("* ---------------------------------------");
+		System.out.println("* FS: Writing Version: " + newVersion + ", Data: " + data);
+		String writeData = Integer.toString(newVersion) + "," + data;
+		writeFile(writeData);
+		
+		String sendData = null;
+		SctpChannel[] sendSocket = new SctpChannel[Application.totalNodes];
+		InetSocketAddress serverAddr = null;
+		ByteBuffer buffer = ByteBuffer.allocateDirect(100);
+		CharBuffer charbuf = buffer.asCharBuffer();
+		MessageInfo msgInfo = MessageInfo.createOutgoing(null, 0);
+		Charset charset = Charset.forName("ISO-8859-1");
+		CharsetEncoder encoder = charset.newEncoder();
+
+		System.out.println("* ---------------------------------------");
+		System.out.println("* FS: Writing to Other Files");
+
+		/* Send a request for Lock and Receive a Reply */
+		for (int i = 0; i < lockCount - 1; i++) {
+
+			System.out.println("* ---------------------------------------");
+			System.out.println("* FS: Connecting to: "
+					+ ipAddr[lockMembers[i] - 1] + ", "
+					+ portN[lockMembers[i] - 1]);
+			serverAddr = new InetSocketAddress(ipAddr[lockMembers[i] - 1],
+					portN[lockMembers[i] - 1]);
+
+			try {
+				sendSocket[i] = SctpChannel.open(serverAddr, 0, 0);
+			} catch (IOException e) {
+				// e.printStackTrace();
+				System.out.println("* FS: Connection Refused");
+				return -1;
+			}
+
+			sendData = Integer.toString(WRITE) + "-" + writeData;
+
+			charbuf.clear();
+			charbuf.put(sendData);
+			charbuf.flip();
+
+			buffer.clear();
+			encoder.encode(charbuf, buffer, true);
+			buffer.flip();
+
+			try {
+				sendSocket[i].send(buffer, msgInfo);
+			} catch (IOException e) {
+				// e.printStackTrace();
+				System.out.println("* FS: Send Failed");
+				return -1;
+			}
+			System.out.println("* FS: Send Data: " + sendData);
+			buffer.clear();
+			charbuf.clear();
+
+		}
+
 		return 0;
 	}
 }
