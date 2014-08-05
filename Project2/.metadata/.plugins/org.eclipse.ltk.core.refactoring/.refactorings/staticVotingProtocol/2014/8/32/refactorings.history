@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename field &apos;localRcvSock&apos; in &apos;FileSystem&apos; to &apos;localRcvChannel&apos;&#x0D;&#x0A;- Original project: &apos;staticVotingProtocol&apos;&#x0D;&#x0A;- Original element: &apos;FileSystem.localRcvSock&apos;&#x0D;&#x0A;- Renamed element: &apos;FileSystem.localRcvChannel&apos;&#x0D;&#x0A;- Update references to refactored element&#x0D;&#x0A;- Update textual occurrences in comments and strings" delegate="false" deprecate="false" description="Rename field &apos;localRcvSock&apos;" flags="589826" getter="false" id="org.eclipse.jdt.ui.rename.field" input="/src&lt;{FileSystem.java[FileSystem^localRcvSock" name="localRcvChannel" references="true" setter="false" stamp="1407127275015" textual="false" version="1.0"/>
+</session>

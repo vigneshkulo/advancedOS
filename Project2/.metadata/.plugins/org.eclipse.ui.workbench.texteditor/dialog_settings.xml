@@ -13,18 +13,19 @@
 		<item value="false" key="casesensitive"/>
 		<item value="false" key="incremental"/>
 		<item value="false" key="wholeword"/>
-		<item value="TRUE" key="selection"/>
+		<item value="localRcvChannel" key="selection"/>
 		<list key="findhistory">
-			<item value="TRUE"/>
-			<item value="Timer St"/>
-			<item value="15007"/>
-			<item value="15006"/>
-			<item value="15005"/>
-			<item value="15004"/>
-			<item value="15003"/>
-			<item value="15002"/>
+			<item value="localRcvChannel"/>
+			<item value="localSock"/>
+			<item value="nn"/>
+			<item value="Acti"/>
+			<item value="timer"/>
+			<item value="Action"/>
+			<item value="new A"/>
+			<item value="new"/>
 		</list>
 		<list key="replacehistory">
+			<item value="//System.out"/>
 			<item value="15007"/>
 			<item value="15006"/>
 			<item value="15005"/>
